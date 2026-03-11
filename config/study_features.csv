@@ -1,0 +1,9 @@
+feature_name,description,default_unit,example_values,is_required,display_order
+age_median,中位年龄,years,"65, 64, 63",TRUE,10
+stage_distribution,分期分布,,"Stage 2 (30%); Stage 3A (45%); Stage 3B (25%)",TRUE,20
+pd_l1_positivity_rate,PD-L1阳性率,%,67,TRUE,30
+squamous_histology_rate,鳞癌比例,%,49,TRUE,40
+median_followup,中位随访时间,months,"11.7, 25.2, 41.4",TRUE,50
+neoadjuvant_cycles,新辅助治疗周期数,cycles,"3, 4",TRUE,60
+adjuvant_cycles,辅助治疗周期数,cycles,"0, 6, 12, 13",FALSE,70
+treatment_setting,治疗设置,,"Perioperative, Neoadjuvant, Adjuvant",TRUE,80
