@@ -1,8 +1,9 @@
-# ==================== 改进版 Shiny 荟萃分析工具 ====================
+# ==================== 改进版 Shiny 荟萃分析工具（左右列表排序版） ====================
 # 功能：
 #   - 从 clinical_studies_data.xlsx 读取研究信息和二分类数据
 #   - 筛选研究，动态选择结局指标和亚组，并选择多项研究进行固定/随机效应荟萃分析
 #   - 支持亚组分析（当选择具体亚组变量时，自动按所有水平分组）
+#   - 通过左右列表自由选择亚组水平并调整顺序
 #   - 显示森林图和统计摘要
 # 依赖包：shiny, DT, meta, grid, readxl, dplyr, tidyr, stringr
 
@@ -71,7 +72,6 @@ ui <- fluidPage(
     br(),
     h4("2. 选择研究（点击行可多选）"),
 
-
     fluidRow(
       column(2, actionButton("select_all", "全选", icon = icon("check-square"))),
       column(2, actionButton("clear_selection", "清除", icon = icon("times")))
@@ -87,7 +87,38 @@ ui <- fluidPage(
     h4("2.5 选择结局指标与亚组"),
     fluidRow(
       column(6, uiOutput("outcome_ui")),
-      column(6, uiOutput("subgroup_ui"))  # 亚组变量选择（含"无亚组"选项，默认Overall）
+      column(6, uiOutput("subgroup_ui"))
+    ),
+    # 亚组顺序构建控件（仅当选择具体亚组时显示）
+    conditionalPanel(
+      condition = "input.subgroup != '' && input.subgroup != 'Overall'",
+      wellPanel(
+        h5("选择亚组水平并调整顺序"),
+        fluidRow(
+          column(4,
+                 h6("可用水平"),
+                 selectInput("left", NULL, choices = NULL, size = 8, selectize = FALSE)
+          ),
+          column(1,
+                 br(),
+                 actionButton("add", "加入 ->", width = "100%"),
+                 br(), br(),
+                 actionButton("remove", "<- 移除", width = "100%"),
+                 br(), br(),
+                 actionButton("up", "上升", width = "100%"),
+                 br(), br(),
+                 actionButton("down", "下降", width = "100%")
+          ),
+          column(4,
+                 h6("已选水平（显示顺序）"),
+                 selectInput("right", NULL, choices = NULL, size = 8, selectize = FALSE)
+          ),
+          column(2,
+                 br(),
+                 actionButton("reset_all", "重置为全部", icon = icon("undo"), width = "100%")
+          )
+        )
+      )
     )
   ),
 
@@ -120,7 +151,6 @@ server <- function(input, output, session) {
 
   # 创建表格代理
   proxy <- dataTableProxy('study_table')
-
 
   # 全选按钮
   observeEvent(input$select_all, {
@@ -191,6 +221,107 @@ server <- function(input, output, session) {
     selectInput("subgroup", "亚组变量", choices = NULL)
   })
 
+  # ---------- 亚组顺序构建逻辑（左右列表） ----------
+  # 存储右侧顺序（已选水平）
+  selected_order <- reactiveVal(character(0))
+
+  # 获取所有亚组水平（基于当前结局和亚组变量）
+  all_levels <- reactive({
+    req(input$outcome, input$subgroup, input$subgroup != "", input$subgroup != "Overall")
+    levels <- binary_data %>%
+      filter(outcome == input$outcome, subgroup == input$subgroup, !is.na(subgroup_option)) %>%
+      pull(subgroup_option) %>%
+      unique()
+    levels
+  })
+
+  # 当亚组变量改变时，重置右侧为全部水平（默认顺序）
+  observeEvent(c(input$outcome, input$subgroup), {
+    req(all_levels())
+    levels <- all_levels()
+    selected_order(levels)
+    # 更新左侧选项（左侧显示未选中的）
+    updateSelectInput(session, "left", choices = setdiff(levels, selected_order()))
+    # 更新右侧显示
+    updateSelectInput(session, "right", choices = selected_order(), selected = character(0))
+  })
+
+  # 监听左侧选择，更新左侧选项（当右侧变化时触发）
+  observe({
+    req(all_levels())
+    levels <- all_levels()
+    left_choices <- setdiff(levels, selected_order())
+    updateSelectInput(session, "left", choices = left_choices)
+  })
+
+  # 监听右侧变化，更新右侧显示
+  observe({
+    updateSelectInput(session, "right", choices = selected_order())
+  })
+
+  # 加入：将左侧选中项追加到右侧末尾
+  observeEvent(input$add, {
+    req(input$left, input$left != "")
+    selected <- input$left
+    current <- selected_order()
+    if (!(selected %in% current)) {
+      new_order <- c(current, selected)
+      selected_order(new_order)
+      # 自动选中新加入的项
+      updateSelectInput(session, "right", selected = selected)
+    }
+  })
+
+  # 移除：从右侧删除选中项
+  observeEvent(input$remove, {
+    req(input$right, input$right != "")
+    selected <- input$right
+    current <- selected_order()
+    new_order <- current[current != selected]
+    selected_order(new_order)
+    # 清除右侧选中状态
+    updateSelectInput(session, "right", selected = character(0))
+  })
+
+  # 上升：将右侧选中项与上一项交换位置
+  observeEvent(input$up, {
+    req(input$right, input$right != "")
+    selected <- input$right
+    current <- selected_order()
+    idx <- which(current == selected)
+    if (length(idx) == 1 && idx > 1) {
+      new_order <- current
+      new_order[idx] <- current[idx - 1]
+      new_order[idx - 1] <- selected
+      selected_order(new_order)
+      # 保持选中该项
+      updateSelectInput(session, "right", selected = selected)
+    }
+  })
+
+  # 下降：将右侧选中项与下一项交换位置
+  observeEvent(input$down, {
+    req(input$right, input$right != "")
+    selected <- input$right
+    current <- selected_order()
+    idx <- which(current == selected)
+    if (length(idx) == 1 && idx < length(current)) {
+      new_order <- current
+      new_order[idx] <- current[idx + 1]
+      new_order[idx + 1] <- selected
+      selected_order(new_order)
+      updateSelectInput(session, "right", selected = selected)
+    }
+  })
+
+  # 重置为全部水平（默认顺序）
+  observeEvent(input$reset_all, {
+    req(all_levels())
+    levels <- all_levels()
+    selected_order(levels)
+    updateSelectInput(session, "right", selected = character(0))
+  })
+
   # ---------- 根据选择的结局和亚组变量提取可用数据 ----------
   current_data <- reactive({
     req(input$outcome)
@@ -231,18 +362,34 @@ server <- function(input, output, session) {
         return(NULL)
       }
 
-      # ---------- 新增：计算每个研究的 OR 近似值，并按亚组内 OR 升序排列 ----------
+      # 计算每个研究的 OR 近似值，并按亚组内 OR 升序排列（但最终顺序由用户定义覆盖）
       study_levels <- study_levels %>%
         mutate(OR_approx = (d_ici * (n_ctrl - d_ctrl)) /
-                 ((n_ici - d_ici) * d_ctrl + 1e-10)) %>%   # 加极小值避免除零
-        arrange(level, OR_approx) %>%                                 # 先按亚组水平，再按 OR 排序
-        select(-OR_approx)                                            # 移除辅助列
+                 ((n_ici - d_ici) * d_ctrl + 1e-10)) %>%
+        arrange(level, OR_approx) %>%
+        select(-OR_approx)
 
       # 重命名并添加 subgroup_level 列
       result <- study_levels %>%
         rename(study = trial, event_ici = d_ici, n_ici = n_ici,
                event_ctrl = d_ctrl, n_ctrl = n_ctrl, subgroup_level = level) %>%
         select(study, event_ici, n_ici, event_ctrl, n_ctrl, subgroup_level)
+
+      # ---------- 应用用户自定义的亚组顺序 ----------
+      order_vec <- selected_order()
+      if (length(order_vec) == 0) {
+        showNotification("请至少选择一个亚组水平", type = "warning")
+        return(NULL)
+      }
+      # 只保留用户选择的亚组水平
+      result <- result %>% filter(subgroup_level %in% order_vec)
+      if (nrow(result) == 0) {
+        showNotification("当前没有研究属于您选择的亚组水平，请调整选择", type = "warning")
+        return(NULL)
+      }
+      # 将 subgroup_level 转换为因子，按用户顺序设置 levels
+      result$subgroup_level <- factor(result$subgroup_level, levels = order_vec)
+      result <- result[order(result$subgroup_level), ]
 
       return(result)
     }
@@ -293,7 +440,7 @@ server <- function(input, output, session) {
 
       result <- do.call(rbind, data_list)
 
-      # ---------- 无亚组模式原有的排序：按 OR 从小到大 ----------
+      # 无亚组模式按 OR 从小到大排序
       result$OR_true <- (result$event_ici * (result$n_ctrl - result$event_ctrl)) /
         ((result$n_ici - result$event_ici) * result$event_ctrl + 1e-10)
       result <- result[order(result$OR_true, decreasing = FALSE), ]
@@ -341,6 +488,8 @@ server <- function(input, output, session) {
         showNotification("剩余研究不足两项，无法进行分析", type = "error")
         return(NULL)
       }
+
+      # 按用户指定的亚组顺序排序（已经因子化）
       data <- data[order(data$subgroup_level), ]
 
       m <- metabin(event.e = event_ici, n.e = n_ici,
@@ -396,16 +545,11 @@ server <- function(input, output, session) {
     weight_col <- if (input$model == "fixed") "w.fixed" else "w.random"
     weight_lab <- if (input$model == "fixed") "Weight\n(fixed)" else "Weight\n(random)"
 
-
-    #左侧显示的列（添加 z 和 pval）
     leftcols <- c("studlab", "event.e", "n.e", "event.c", "n.c", weight_col)
-    leftlabs <- c("Study", "ICI\nEvents", " \nTotal", "Control\nEvents", "Control\nTotal",  weight_lab)
+    leftlabs <- c("Study", "ICI\nEvents", " \nTotal", "Control\nEvents", "Control\nTotal", weight_lab)
 
-    # 当前荟萃分析是亚组分析，即数据按某个分类变量（如不同的 PD-L1 表达水平、病理类型等）分层，森林图需要按亚组分别显示合并结果。
     if (!is.null(m$byvar)) {
       forest(m,
-             #leftcols = c("studlab", "event.e", "n.e", "event.c", "n.c", weight_col),
-             #leftlabs = c("Study", "ICI\nEvents", " \nTotal", "Control\nEvents", "Control\nTotal", weight_lab),
              leftcols = leftcols,
              leftlabs = leftlabs,
              rightcols = c("effect.ci"),
@@ -415,27 +559,22 @@ server <- function(input, output, session) {
              pooled.events = TRUE,
              comb.fixed = (input$model == "fixed"),
              comb.random = (input$model == "random"),
-
-
              test.overall = TRUE,
              test.subgroup = TRUE,
-             mar = c(8, 4, 4, 2) + 0.1,  # 适当增加边距
+             mar = c(8, 4, 4, 2) + 0.1,
              hetstat = TRUE,
-             overall.hetstat = TRUE,      # 显示整体异质性
+             overall.hetstat = TRUE,
              subgroup.hetstat = TRUE,
-             print.byvar = TRUE,          # 打印亚组标签
-
+             print.byvar = TRUE,
              fontsize = 9,
              squaresize = 0.6,
              col.square = "navy",
              col.diamond = "maroon",
              col.diamond.lines = "maroon",
-             bysort = TRUE,
+             bysort = FALSE,          # 关键修改：FALSE 以保留因子水平顺序
              print.subgroup.name = TRUE)
     } else {
       forest(m,
-             #leftcols = c("studlab", "event.e", "n.e", "event.c", "n.c", weight_col),
-             #leftlabs = c("Study", "ICI\nEvents", " \nTotal", "Control\nEvents", "Control\nTotal", weight_lab),
              leftcols = leftcols,
              leftlabs = leftlabs,
              rightcols = c("effect.ci"),

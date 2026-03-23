@@ -8,6 +8,7 @@ renv::install("devtools")
 renv::install("rentrez")
 renv::install(c("shiny", "shinyjs", "DT", "httr", "jsonlite", "pdftools", "rentrez", "xml2"))
 renv::install(c("tidyverse"))
+renv::install(c("rhandsontable"))
 #
 # 1. 仅创建空模板（无自动填充）
 create_study_structure("CheckMate816", "primary")
@@ -49,6 +50,7 @@ Study_name Year First_author Trial_phase Total_number Arm Treatment_Design
 ## 表： 
 
 
-
+library(AIMetaAnalysis)
+runBinaryDataExtraction()
 
 lessThan_65 yr ['<65 years']
