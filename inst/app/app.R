@@ -5,6 +5,7 @@
 #   - 支持亚组分析（当选择具体亚组变量时，自动按所有水平分组）
 #   - 通过左右列表自由选择亚组水平并调整顺序
 #   - 显示森林图和统计摘要
+#   - 生存数据必须提供 te 和 se_te 列，缺失时提示用户并排除该研究
 # 依赖包：shiny, DT, meta, grid, readxl, dplyr, tidyr, stringr
 
 library(shiny)
@@ -33,31 +34,117 @@ studies_info <- read_excel(data_file, sheet = "studies_info")
 binary_data  <- read_excel(data_file, sheet = "binary_data")
 survival_data <- read_excel(data_file, sheet = "survival")
 
-# ---------- 2. 处理数据，过滤 removed 列 ----------
-binary_data <- binary_data %>% filter(is.na(removed) | removed != "YES")
-survival_data <- survival_data %>% filter(is.na(removed) | removed != "YES")
-
-# 统一生存数据的亚组列名，与 binary 保持一致
-if ("group" %in% names(survival_data) && "groupOption" %in% names(survival_data)) {
-  survival_data <- survival_data %>%
-    rename(subgroup = group, subgroup_option = groupOption)
+# ---------- 统一年份列名 ----------
+if ("pub_year" %in% names(studies_info)) {
+  studies_info <- studies_info %>% rename(year = pub_year)
+}
+if ("pub_year" %in% names(binary_data)) {
+  binary_data <- binary_data %>% rename(year = pub_year)
+}
+if ("pub_year" %in% names(survival_data)) {
+  survival_data <- survival_data %>% rename(year = pub_year)
 }
 
-# ---------- 3. 处理 studies_info，统一研究名称 ----------
+# ---------- 安全转换数值列（抑制强制转换警告） ----------
+binary_numeric_cols <- intersect(c("d", "n", "n?"), names(binary_data))
+if (length(binary_numeric_cols) > 0) {
+  suppressWarnings({
+    binary_data <- binary_data %>% mutate(across(all_of(binary_numeric_cols), as.numeric))
+  })
+}
+
+survival_numeric_cols <- intersect(c("te", "se_te", "n1", "n2", "z_value", "p_value", "hr", "lower_ci", "upper_ci"), names(survival_data))
+if (length(survival_numeric_cols) > 0) {
+  suppressWarnings({
+    survival_data <- survival_data %>% mutate(across(all_of(survival_numeric_cols), as.numeric))
+  })
+}
+
+# ---------- 统一研究标识列 ----------
+# 研究信息中的研究名称列
 if ("trial" %in% names(studies_info)) {
   studies_info$study_name <- studies_info$trial
 } else {
   studies_info$study_name <- studies_info$study
 }
-
 studies_info$year <- as.integer(studies_info$year)
 
-if (any(duplicated(studies_info$study_name))) {
-  warning("studies_info 中存在重复的研究名称，将保留第一条记录。")
-  studies_info <- studies_info[!duplicated(studies_info$study_name), ]
+# 二分类数据：确保有 study 列
+if ("trial" %in% names(binary_data)) {
+  binary_data$study <- binary_data$trial
+} else if (!"study" %in% names(binary_data)) {
+  stop("二分类数据中必须包含研究标识列（trial 或 study）")
 }
 
-# ---------- 4. UI ----------
+# 生存数据：确保有 study 列
+if ("trial" %in% names(survival_data)) {
+  survival_data$study <- survival_data$trial
+} else if (!"study" %in% names(survival_data)) {
+  stop("生存数据中必须包含研究标识列（trial 或 study）")
+}
+
+# ---------- 处理 year 列：直接使用自身数据，不做匹配 ----------
+# 如果 binary_data 中没有 year 列，则创建一列全为 NA
+if (!"year" %in% names(binary_data)) {
+  binary_data$year <- NA_integer_
+} else {
+  binary_data$year <- as.numeric(binary_data$year)
+}
+
+# 如果 survival_data 中没有 year 列，则创建一列全为 NA
+if (!"year" %in% names(survival_data)) {
+  survival_data$year <- NA_integer_
+} else {
+  survival_data$year <- as.numeric(survival_data$year)
+}
+
+# ---------- 生成唯一标识 study_id 和显示名称 ----------
+# studies_info
+studies_info <- studies_info %>%
+  mutate(study_id = paste(study_name, year, sep = "_"),
+         study_display = paste0(study_name, " (", year, ")"))
+
+# binary_data
+binary_data <- binary_data %>%
+  mutate(study_id = paste(study, year, sep = "_"),
+         study_display = paste0(study, " (", year, ")"))
+
+# survival_data
+survival_data <- survival_data %>%
+  mutate(study_id = paste(study, year, sep = "_"),
+         study_display = paste0(study, " (", year, ")"))
+
+# ---------- 过滤 removed 列 ----------
+if ("removed" %in% names(binary_data)) {
+  binary_data <- binary_data %>% filter(is.na(removed) | removed != "YES")
+}
+if ("removed" %in% names(survival_data)) {
+  survival_data <- survival_data %>% filter(is.na(removed) | removed != "YES")
+}
+
+# ---------- 生存数据预处理：统一亚组列名 ----------
+if ("group" %in% names(survival_data) && "groupOption" %in% names(survival_data)) {
+  survival_data <- survival_data %>%
+    rename(subgroup = group, subgroup_option = groupOption)
+}
+if (!"subgroup" %in% names(survival_data)) {
+  survival_data$subgroup <- NA
+}
+if (!"subgroup_option" %in% names(survival_data)) {
+  survival_data$subgroup_option <- NA
+}
+
+# 再次确保数值列转换（已有警告抑制）
+survival_data <- survival_data %>%
+  mutate(te = as.numeric(te), se_te = as.numeric(se_te),
+         n1 = as.numeric(n1), n2 = as.numeric(n2))
+
+# 检查生存数据是否缺少 te 或 se_te 列
+if (!("te" %in% names(survival_data)) || !("se_te" %in% names(survival_data))) {
+  stop("生存数据中必须包含 'te' 和 'se_te' 列。请检查数据文件。")
+}
+
+# ---------- 2. UI ----------
 ui <- fluidPage(
   titlePanel("NSCLC 围手术期免疫治疗荟萃分析"),
 
@@ -160,7 +247,7 @@ ui <- fluidPage(
   )
 )
 
-# ---------- 5. Server ----------
+# ---------- 3. Server ----------
 server <- function(input, output, session) {
 
   # 创建表格代理
@@ -187,9 +274,9 @@ server <- function(input, output, session) {
     df
   })
 
-  # 显示研究表格
+  # 显示研究表格（显示 study_display，内部使用 study_id）
   output$study_table <- renderDT({
-    display_df <- filtered_studies()[, c("study_name", "phase", "year")]
+    display_df <- filtered_studies()[, c("study_display", "phase", "year")]
     datatable(display_df,
               selection = 'multiple',
               options = list(pageLength = 10, autoWidth = TRUE, dom = 'ftp'),
@@ -198,11 +285,11 @@ server <- function(input, output, session) {
     )
   })
 
-  # 获取用户选中的研究名称
+  # 获取用户选中的研究 study_id 列表
   selected_studies <- reactive({
     rows <- input$study_table_rows_selected
     if (is.null(rows)) return(NULL)
-    filtered_studies()[rows, "study_name", drop = FALSE]
+    filtered_studies()[rows, "study_id", drop = TRUE]
   })
 
   # ---------- 动态生成结局指标和亚组的下拉菜单（根据数据类型） ----------
@@ -251,10 +338,8 @@ server <- function(input, output, session) {
   })
 
   # ---------- 亚组顺序构建逻辑（左右列表） ----------
-  # 存储右侧顺序（已选水平）
   selected_order <- reactiveVal(character(0))
 
-  # 获取所有亚组水平（基于当前数据类型、结局和亚组变量）
   all_levels <- reactive({
     req(input$outcome, input$subgroup, input$subgroup != "", input$subgroup != "Overall")
     if (input$data_type == "binary") {
@@ -271,18 +356,14 @@ server <- function(input, output, session) {
     levels
   })
 
-  # 当亚组变量改变时，重置右侧为全部水平（默认顺序）
   observeEvent(c(input$outcome, input$subgroup, input$data_type), {
     req(all_levels())
     levels <- all_levels()
     selected_order(levels)
-    # 更新左侧选项（左侧显示未选中的）
     updateSelectInput(session, "left", choices = setdiff(levels, selected_order()))
-    # 更新右侧显示
     updateSelectInput(session, "right", choices = selected_order(), selected = character(0))
   })
 
-  # 监听左侧选择，更新左侧选项（当右侧变化时触发）
   observe({
     req(all_levels())
     levels <- all_levels()
@@ -290,12 +371,10 @@ server <- function(input, output, session) {
     updateSelectInput(session, "left", choices = left_choices)
   })
 
-  # 监听右侧变化，更新右侧显示
   observe({
     updateSelectInput(session, "right", choices = selected_order())
   })
 
-  # 加入：将左侧选中项追加到右侧末尾
   observeEvent(input$add, {
     req(input$left, input$left != "")
     selected <- input$left
@@ -303,23 +382,19 @@ server <- function(input, output, session) {
     if (!(selected %in% current)) {
       new_order <- c(current, selected)
       selected_order(new_order)
-      # 自动选中新加入的项
       updateSelectInput(session, "right", selected = selected)
     }
   })
 
-  # 移除：从右侧删除选中项
   observeEvent(input$remove, {
     req(input$right, input$right != "")
     selected <- input$right
     current <- selected_order()
     new_order <- current[current != selected]
     selected_order(new_order)
-    # 清除右侧选中状态
     updateSelectInput(session, "right", selected = character(0))
   })
 
-  # 上升：将右侧选中项与上一项交换位置
   observeEvent(input$up, {
     req(input$right, input$right != "")
     selected <- input$right
@@ -330,12 +405,10 @@ server <- function(input, output, session) {
       new_order[idx] <- current[idx - 1]
       new_order[idx - 1] <- selected
       selected_order(new_order)
-      # 保持选中该项
       updateSelectInput(session, "right", selected = selected)
     }
   })
 
-  # 下降：将右侧选中项与下一项交换位置
   observeEvent(input$down, {
     req(input$right, input$right != "")
     selected <- input$right
@@ -350,7 +423,6 @@ server <- function(input, output, session) {
     }
   })
 
-  # 重置为全部水平（默认顺序）
   observeEvent(input$reset_all, {
     req(all_levels())
     levels <- all_levels()
@@ -382,10 +454,11 @@ server <- function(input, output, session) {
         level_data <- level_data %>%
           mutate(arm = if_else(grepl("_ctrl$", treatment), "ctrl", "ici"))
 
+        # 按 study_id、level、arm 聚合
         study_levels <- level_data %>%
-          group_by(trial, level, arm) %>%
+          group_by(study_id, level, arm) %>%
           summarise(d = sum(d, na.rm = TRUE), n = sum(n, na.rm = TRUE), .groups = "drop") %>%
-          pivot_wider(id_cols = c(trial, level), names_from = arm, values_from = c(d, n)) %>%
+          pivot_wider(id_cols = c(study_id, level), names_from = arm, values_from = c(d, n)) %>%
           filter(!is.na(d_ici) & !is.na(n_ici) & !is.na(d_ctrl) & !is.na(n_ctrl))
 
         if (nrow(study_levels) == 0) {
@@ -393,16 +466,18 @@ server <- function(input, output, session) {
           return(NULL)
         }
 
+        # 添加显示名称（从原始数据中取第一个 study_display，但 study_display 相同）
         study_levels <- study_levels %>%
+          left_join(level_data %>% select(study_id, study_display) %>% distinct(study_id, .keep_all = TRUE), by = "study_id") %>%
           mutate(OR_approx = (d_ici * (n_ctrl - d_ctrl)) /
                    ((n_ici - d_ici) * d_ctrl + 1e-10)) %>%
           arrange(level, OR_approx) %>%
           select(-OR_approx)
 
         result <- study_levels %>%
-          rename(study = trial, event_ici = d_ici, n_ici = n_ici,
+          rename(event_ici = d_ici, n_ici = n_ici,
                  event_ctrl = d_ctrl, n_ctrl = n_ctrl, subgroup_level = level) %>%
-          select(study, event_ici, n_ici, event_ctrl, n_ctrl, subgroup_level)
+          select(study_id, study_display, event_ici, n_ici, event_ctrl, n_ctrl, subgroup_level)
 
         order_vec <- selected_order()
         if (length(order_vec) == 0) {
@@ -425,17 +500,18 @@ server <- function(input, output, session) {
           return(NULL)
         }
 
-        unique_trials <- unique(filtered_overall$trial)
+        unique_studies <- unique(filtered_overall$study_id)
         data_list <- list()
-        for (s in unique_trials) {
-          study_rows <- filtered_overall[filtered_overall$trial == s, ]
+        for (s in unique_studies) {
+          study_rows <- filtered_overall[filtered_overall$study_id == s, ]
           ctrl_idx <- grepl("_ctrl$", study_rows$treatment)
           exp_idx  <- !ctrl_idx
           if (sum(ctrl_idx) != 1 || sum(exp_idx) != 1) next
           ctrl_rows <- study_rows[ctrl_idx, ]
           exp_rows  <- study_rows[exp_idx, ]
           data_list[[s]] <- data.frame(
-            study      = s,
+            study_id      = s,
+            study_display = study_rows$study_display[1],
             event_ici  = exp_rows$d,
             n_ici      = exp_rows$n,
             event_ctrl = ctrl_rows$d,
@@ -452,23 +528,32 @@ server <- function(input, output, session) {
           ((result$n_ici - result$event_ici) * result$event_ctrl + 1e-10)
         result <- result[order(result$OR_true, decreasing = FALSE), ]
         result$OR_true <- NULL
-        return(result[, c("study", "event_ici", "n_ici", "event_ctrl", "n_ctrl")])
+        return(result[, c("study_id", "study_display", "event_ici", "n_ici", "event_ctrl", "n_ctrl")])
       }
     } else {
       # ========== 生存数据 ==========
       filtered <- survival_data %>%
-        filter(outcome == input$outcome)
+        filter(outcome == input$outcome) %>%
+        filter(!is.na(te) & !is.na(se_te))
 
-      # 确保存在 te 和 se_te；若缺失则从 hr 和置信区间计算
-      if (!("te" %in% names(filtered))) filtered$te <- NA
-      if (!("se_te" %in% names(filtered))) filtered$se_te <- NA
-      filtered <- filtered %>%
-        mutate(te = if_else(is.na(te), log(hr), te),
-               se_te = if_else(is.na(se_te), (log(hr_uci) - log(hr_lci)) / (2 * 1.96), se_te))
+      if (nrow(filtered) == 0) {
+        showNotification("没有可用的生存数据（所有研究的 te 或 se_te 均缺失）", type = "error")
+        return(NULL)
+      }
 
       # 亚组分析分支
       if (!is.null(input$subgroup) && input$subgroup != "" && input$subgroup != "Overall") {
+        if (!("subgroup" %in% names(filtered)) || all(is.na(filtered$subgroup))) {
+          showNotification("当前数据中没有亚组变量列，无法进行亚组分析", type = "warning")
+          return(NULL)
+        }
         filtered <- filtered %>% filter(subgroup == input$subgroup)
+
+        if (!("subgroup_option" %in% names(filtered)) || all(is.na(filtered$subgroup_option))) {
+          showNotification("当前数据中没有亚组水平列（subgroup_option），无法进行亚组分析", type = "warning")
+          return(NULL)
+        }
+
         level_data <- filtered %>%
           filter(!is.na(subgroup_option)) %>%
           mutate(level = subgroup_option)
@@ -478,24 +563,25 @@ server <- function(input, output, session) {
           return(NULL)
         }
 
-        # 按研究、水平汇总（生存数据每个研究每个水平可能只有一行，但以防万一）
+        # 按 study_id、level 汇总
         study_levels <- level_data %>%
-          group_by(trial, level) %>%
+          group_by(study_id, level) %>%
           summarise(te = mean(te, na.rm = TRUE),
                     se_te = mean(se_te, na.rm = TRUE),
                     n1 = sum(n1, na.rm = TRUE),
                     n2 = sum(n2, na.rm = TRUE),
+                    study_display = first(study_display),
                     .groups = "drop") %>%
           filter(!is.na(te) & !is.na(se_te))
 
         if (nrow(study_levels) == 0) {
-          showNotification("没有可用的生存数据（HR 或标准误缺失）", type = "warning")
+          showNotification("没有可用的生存数据（所有研究的 te 或 se_te 均缺失）", type = "error")
           return(NULL)
         }
 
         result <- study_levels %>%
-          rename(study = trial, subgroup_level = level) %>%
-          select(study, te, se_te, n1, n2, subgroup_level)
+          rename(subgroup_level = level) %>%
+          select(study_id, study_display, te, se_te, n1, n2, subgroup_level)
 
         order_vec <- selected_order()
         if (length(order_vec) == 0) {
@@ -512,27 +598,29 @@ server <- function(input, output, session) {
         return(result)
       } else {
         # 无亚组模式（Overall）
-        filtered_overall <- filtered %>% filter(subgroup == "Overall")
-        if (nrow(filtered_overall) == 0) {
-          showNotification("没有找到总体（Overall）数据", type = "warning")
-          return(NULL)
+        if ("subgroup" %in% names(filtered) && any(filtered$subgroup == "Overall", na.rm = TRUE)) {
+          filtered_overall <- filtered %>% filter(subgroup == "Overall")
+        } else {
+          filtered_overall <- filtered
         }
 
-        unique_trials <- unique(filtered_overall$trial)
+        unique_studies <- unique(filtered_overall$study_id)
         data_list <- list()
-        for (s in unique_trials) {
-          study_rows <- filtered_overall[filtered_overall$trial == s, ]
-          if (nrow(study_rows) != 1) {
-            # 理论上每个研究在 Overall 下只有一行，但若有多行则取平均/和
+        for (s in unique_studies) {
+          study_rows <- filtered_overall[filtered_overall$study_id == s, ]
+          if (nrow(study_rows) > 1) {
             study_rows <- study_rows %>%
               summarise(te = mean(te, na.rm = TRUE),
                         se_te = mean(se_te, na.rm = TRUE),
                         n1 = sum(n1, na.rm = TRUE),
-                        n2 = sum(n2, na.rm = TRUE))
+                        n2 = sum(n2, na.rm = TRUE),
+                        study_display = first(study_display),
+                        .groups = "drop")
           }
           if (is.na(study_rows$te) || is.na(study_rows$se_te)) next
           data_list[[s]] <- data.frame(
-            study = s,
+            study_id = s,
+            study_display = study_rows$study_display,
             te = study_rows$te,
             se_te = study_rows$se_te,
             n1 = study_rows$n1,
@@ -541,29 +629,24 @@ server <- function(input, output, session) {
           )
         }
         if (length(data_list) == 0) {
-          showNotification("当前结局下没有可用的总体数据", type = "warning")
+          showNotification("当前结局下没有可用的总体数据（所有研究的 te 或 se_te 均缺失）", type = "error")
           return(NULL)
         }
         result <- do.call(rbind, data_list)
-        # 按 te 从小到大排序（可选）
         result <- result[order(result$te), ]
-        return(result[, c("study", "te", "se_te", "n1", "n2")])
+        return(result[, c("study_id", "study_display", "te", "se_te", "n1", "n2")])
       }
     }
   })
 
   # 更新数据可用性提示
   output$data_availability <- renderText({
-    avail_studies <- filtered_studies()$study_name
+    avail_studies <- filtered_studies()$study_id
     current <- current_data()
     if (is.null(current)) {
       count <- 0
     } else {
-      if ("subgroup_level" %in% names(current)) {
-        count <- length(unique(current$study))
-      } else {
-        count <- sum(avail_studies %in% current$study)
-      }
+      count <- length(unique(current$study_id))
     }
     paste("当前筛选结果中，", count, "项研究有可用的数据（基于所选数据类型、结局和亚组）。")
   })
@@ -572,19 +655,19 @@ server <- function(input, output, session) {
   meta_result <- eventReactive(input$run, {
     req(selected_studies(), current_data())
 
-    study_vec <- selected_studies()$study_name
+    study_vec <- selected_studies()
     data <- current_data()
 
     if ("subgroup_level" %in% names(data)) {
       # 亚组分析
-      data <- data[data$study %in% study_vec, ]
-      missing_studies <- setdiff(study_vec, unique(data$study))
+      data <- data[data$study_id %in% study_vec, ]
+      missing_studies <- setdiff(study_vec, unique(data$study_id))
       if (length(missing_studies) > 0) {
         showNotification(paste("以下研究在当前亚组下没有数据，将被忽略：",
                                paste(missing_studies, collapse = ", ")),
                          type = "warning")
       }
-      if (length(unique(data$study)) < 2) {
+      if (length(unique(data$study_id)) < 2) {
         showNotification("剩余研究不足两项，无法进行分析", type = "error")
         return(NULL)
       }
@@ -595,31 +678,31 @@ server <- function(input, output, session) {
       if (input$data_type == "binary") {
         m <- metabin(event.e = event_ici, n.e = n_ici,
                      event.c = event_ctrl, n.c = n_ctrl,
-                     studlab = study,
+                     studlab = study_display,   # 使用显示名称
                      data = data,
                      sm = "OR",
                      method = "MH",
-                     fixed = (input$model == "fixed"),
+                     common = (input$model == "fixed"),
                      random = (input$model == "random"),
-                     byvar = subgroup_level,
-                     print.byvar = FALSE,
-                     bylab = input$subgroup)
+                     subgroup = subgroup_level,
+                     print.subgroup.name = FALSE,
+                     subgroup.name = input$subgroup)
       } else {
         m <- metagen(TE = te, seTE = se_te,
-                     studlab = study,
+                     studlab = study_display,   # 使用显示名称
                      data = data,
                      sm = "HR",
                      method.tau = "DL",
-                     fixed = (input$model == "fixed"),
+                     common = (input$model == "fixed"),
                      random = (input$model == "random"),
-                     byvar = subgroup_level,
-                     print.byvar = FALSE,
-                     bylab = input$subgroup)
+                     subgroup = subgroup_level,
+                     print.subgroup.name = FALSE,
+                     subgroup.name = input$subgroup)
       }
     } else {
       # 无亚组分析
-      data <- data[data$study %in% study_vec, ]
-      missing_studies <- setdiff(study_vec, data$study)
+      data <- data[data$study_id %in% study_vec, ]
+      missing_studies <- setdiff(study_vec, data$study_id)
       if (length(missing_studies) > 0) {
         showNotification(paste("以下研究在当前结局下没有数据，将被忽略：",
                                paste(missing_studies, collapse = ", ")),
@@ -638,21 +721,21 @@ server <- function(input, output, session) {
         data$OR_true <- NULL
         m <- metabin(event.e = event_ici, n.e = n_ici,
                      event.c = event_ctrl, n.c = n_ctrl,
-                     studlab = study,
+                     studlab = study_display,
                      data = data,
                      sm = "OR",
                      method = "MH",
-                     fixed = (input$model == "fixed"),
+                     common = (input$model == "fixed"),
                      random = (input$model == "random"))
       } else {
         # 按 te 从小到大排序
         data <- data[order(data$te), ]
         m <- metagen(TE = te, seTE = se_te,
-                     studlab = study,
+                     studlab = study_display,
                      data = data,
                      sm = "HR",
                      method.tau = "DL",
-                     fixed = (input$model == "fixed"),
+                     common = (input$model == "fixed"),
                      random = (input$model == "random"))
       }
     }
@@ -664,26 +747,24 @@ server <- function(input, output, session) {
     m <- meta_result()
     req(m)
 
-    # 根据数据类型和模型确定左侧列与标签
     if (input$data_type == "binary") {
-      weight_col <- if (input$model == "fixed") "w.fixed" else "w.random"
-      weight_lab <- if (input$model == "fixed") "Weight\n(fixed)" else "Weight\n(random)"
+      weight_col <- if (input$model == "fixed") "w.common" else "w.random"
+      weight_lab <- if (input$model == "fixed") "Weight\n(common)" else "Weight\n(random)"
       leftcols <- c("studlab", "event.e", "n.e", "event.c", "n.c", weight_col)
       leftlabs <- c("Study", "ICI\nEvents", " \nTotal", "Control\nEvents", "Control\nTotal", weight_lab)
       effect_lab <- "Odds Ratio"
-      rightlabs <- "Odds Ratio\n95% CI"   # 保持二分类原有风格
+      rightlabs <- "Odds Ratio\n95% CI"
     } else {
-      # 生存数据：按照示例样式
-      weight_col <- if (input$model == "fixed") "w.fixed" else "w.random"
+      weight_col <- if (input$model == "fixed") "w.common" else "w.random"
       weight_lab <- "Weight"
       leftcols <- c("studlab", "TE", "seTE", weight_col)
       leftlabs <- c("Study", "log[Hazard Ratio]", "SE", weight_lab)
       rightcols <- c("effect.ci")
-      rightlabs <- "Hazard Ratio\nIV, Fixed, 95% CI"
+      rightlabs <- "Hazard Ratio\nIV, Common, 95% CI"
       effect_lab <- "Hazard Ratio"
     }
 
-    if (!is.null(m$byvar)) {
+    if (!is.null(m$subgroup)) {
       forest(m,
              leftcols = leftcols,
              leftlabs = leftlabs,
@@ -692,7 +773,7 @@ server <- function(input, output, session) {
              smlab = "",
              pooled.totals = (input$data_type == "binary"),
              pooled.events = (input$data_type == "binary"),
-             comb.fixed = (input$model == "fixed"),
+             comb.common = (input$model == "fixed"),
              comb.random = (input$model == "random"),
              test.overall = TRUE,
              test.subgroup = TRUE,
@@ -700,14 +781,13 @@ server <- function(input, output, session) {
              hetstat = TRUE,
              overall.hetstat = TRUE,
              subgroup.hetstat = TRUE,
-             print.byvar = TRUE,
+             print.subgroup.name = TRUE,
              fontsize = 9,
              squaresize = 0.6,
              col.square = "navy",
              col.diamond = "maroon",
              col.diamond.lines = "maroon",
-             bysort = FALSE,
-             print.subgroup.name = TRUE)
+             sort.subgroup = FALSE)
     } else {
       forest(m,
              leftcols = leftcols,
@@ -717,7 +797,7 @@ server <- function(input, output, session) {
              smlab = "",
              pooled.totals = (input$data_type == "binary"),
              pooled.events = (input$data_type == "binary"),
-             comb.fixed = (input$model == "fixed"),
+             comb.common = (input$model == "fixed"),
              comb.random = (input$model == "random"),
              hetstat = TRUE,
              test.overall = TRUE,
@@ -734,7 +814,7 @@ server <- function(input, output, session) {
     m <- meta_result()
     req(m)
 
-    if (!is.null(m$byvar)) {
+    if (!is.null(m$subgroup)) {
       cat("亚组分析结果\n")
       cat("==================================\n")
       print(summary(m))
@@ -742,9 +822,9 @@ server <- function(input, output, session) {
       if (input$data_type == "binary") {
         if (input$model == "fixed") {
           cat("固定效应模型 (二分类数据, OR)\n")
-          cat("合并 OR: ", round(exp(m$TE.fixed), 2), "\n")
-          cat("95% CI: [", round(exp(m$lower.fixed), 2), ", ", round(exp(m$upper.fixed), 2), "]\n")
-          cat("Z = ", round(m$zval.fixed, 2), ", p = ", format.pval(m$pval.fixed, digits = 4), "\n")
+          cat("合并 OR: ", round(exp(m$TE.common), 2), "\n")
+          cat("95% CI: [", round(exp(m$lower.common), 2), ", ", round(exp(m$upper.common), 2), "]\n")
+          cat("Z = ", round(m$zval.common, 2), ", p = ", format.pval(m$pval.common, digits = 4), "\n")
         } else {
           cat("随机效应模型 (二分类数据, OR)\n")
           cat("合并 OR: ", round(exp(m$TE.random), 2), "\n")
@@ -758,9 +838,9 @@ server <- function(input, output, session) {
       } else {
         if (input$model == "fixed") {
           cat("固定效应模型 (生存数据, HR)\n")
-          cat("合并 HR: ", round(exp(m$TE.fixed), 2), "\n")
-          cat("95% CI: [", round(exp(m$lower.fixed), 2), ", ", round(exp(m$upper.fixed), 2), "]\n")
-          cat("Z = ", round(m$zval.fixed, 2), ", p = ", format.pval(m$pval.fixed, digits = 4), "\n")
+          cat("合并 HR: ", round(exp(m$TE.common), 2), "\n")
+          cat("95% CI: [", round(exp(m$lower.common), 2), ", ", round(exp(m$upper.common), 2), "]\n")
+          cat("Z = ", round(m$zval.common, 2), ", p = ", format.pval(m$pval.common, digits = 4), "\n")
         } else {
           cat("随机效应模型 (生存数据, HR)\n")
           cat("合并 HR: ", round(exp(m$TE.random), 2), "\n")
@@ -776,5 +856,5 @@ server <- function(input, output, session) {
   })
 }
 
-# ---------- 6. 运行应用 ----------
+# ---------- 4. 运行应用 ----------
 shinyApp(ui = ui, server = server)

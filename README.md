@@ -9,6 +9,7 @@ renv::install("rentrez")
 renv::install(c("shiny", "shinyjs", "DT", "httr", "jsonlite", "pdftools", "rentrez", "xml2"))
 renv::install(c("tidyverse"))
 renv::install(c("rhandsontable"))
+renv::install(c("openxlsx"))
 #
 # 1. 仅创建空模板（无自动填充）
 create_study_structure("CheckMate816", "primary")
@@ -54,3 +55,4 @@ library(AIMetaAnalysis)
 runBinaryDataExtraction()
 
 lessThan_65 yr ['<65 years']
+
