@@ -3,6 +3,7 @@
 # ===============================
 # 所有参考数据（studies_info, binary_data, survival, continuous）从包的 clinical_studies_data.xlsx 只读加载
 # 用户输入保存在 user_logs.xlsx 的 my_inputs 表中
+# 数据字典（data_dictionary）仅用于增强 prompt，应用不会修改字典
 
 library(shiny)
 library(clipr)
@@ -22,7 +23,7 @@ if (pkg_file == "") {
 user_logs <- "user_logs.xlsx"
 
 # ----------------------------------------------------------------------
-# 2. Helper functions to read reference data
+# 2. Helper functions to read reference data (read-only)
 # ----------------------------------------------------------------------
 read_reference_sheet <- function(sheet_name) {
   if (!file.exists(pkg_file)) return(NULL)
@@ -32,7 +33,55 @@ read_reference_sheet <- function(sheet_name) {
   )
 }
 
-# Load reference sheets
+load_sheet_data <- function(sheet_name) {
+  df <- read_reference_sheet(sheet_name)
+  if (is.null(df)) return(list(outcomes = character(), col_names = character()))
+  if ("removed" %in% names(df)) {
+    df <- df %>% filter(is.na(removed) | removed != "YES")
+  }
+  outcomes <- unique(df$outcome)
+  outcomes <- outcomes[!is.na(outcomes)]
+  col_names <- names(df)
+  list(outcomes = outcomes, col_names = col_names)
+}
+
+# ----------------------------------------------------------------------
+# 3. Load data dictionary (read-only)
+# ----------------------------------------------------------------------
+load_data_dictionary <- function(file) {
+  if (!file.exists(file)) return(list())
+  # 检查 sheet 是否存在
+  sheets <- excel_sheets(file)
+  if (!"data_dictionary" %in% sheets) {
+    warning("data_dictionary sheet not found. Please run 'update_data_dictionary.R' to create it.")
+    return(list())
+  }
+  dict_df <- tryCatch(
+    read_excel(file, sheet = "data_dictionary"),
+    error = function(e) NULL
+  )
+  if (is.null(dict_df) || nrow(dict_df) == 0) return(list())
+  # 只保留 active 的行
+  dict_df <- dict_df %>% filter(status == "active")
+  # 构建嵌套列表
+  dict <- list()
+  for (i in 1:nrow(dict_df)) {
+    dtype <- dict_df$data_type[i]
+    col <- dict_df$sheet_column[i]
+    if (!dtype %in% names(dict)) dict[[dtype]] <- list()
+    if (!col %in% names(dict[[dtype]])) dict[[dtype]][[col]] <- list()
+    ct <- dict_df$constraint_type[i]
+    cv <- dict_df$constraint_value[i]
+    dict[[dtype]][[col]][[ct]] <- cv
+    # 附加其他字段
+    if ("is_critical" %in% names(dict_df)) dict[[dtype]][[col]]$is_critical <- dict_df$is_critical[i]
+    if ("example" %in% names(dict_df)) dict[[dtype]][[col]]$example <- dict_df$example[i]
+    if ("notes" %in% names(dict_df)) dict[[dtype]][[col]]$notes <- dict_df$notes[i]
+  }
+  return(dict)
+}
+
+# 加载参考数据
 studies_info <- read_reference_sheet("studies_info")
 if (is.null(studies_info) || nrow(studies_info) == 0) {
   studies_info <- data.frame(trial = character(), pub_year = integer(),
@@ -49,24 +98,15 @@ studies_info$study_display <- ifelse(is.na(studies_info$pub_year),
                                      studies_info$trial,
                                      paste(studies_info$trial, studies_info$pub_year, sep = " - "))
 
-load_sheet_data <- function(sheet_name) {
-  df <- read_reference_sheet(sheet_name)
-  if (is.null(df)) return(list(outcomes = character(), col_names = character()))
-  if ("removed" %in% names(df)) {
-    df <- df %>% filter(is.na(removed) | removed != "YES")
-  }
-  outcomes <- unique(df$outcome)
-  outcomes <- outcomes[!is.na(outcomes)]
-  col_names <- names(df)
-  list(outcomes = outcomes, col_names = col_names)
-}
-
-binary_data <- load_sheet_data("binary_data")
+binary_data   <- load_sheet_data("binary_data")
 survival_data <- load_sheet_data("survival")
 continuous_data <- load_sheet_data("continuous")
 
+# 加载数据字典（只读）
+data_dict <- load_data_dictionary(pkg_file)
+
 # ----------------------------------------------------------------------
-# 3. User logs handling
+# 4. User logs handling (unchanged)
 # ----------------------------------------------------------------------
 ensure_user_logs <- function() {
   if (!file.exists(user_logs)) {
@@ -127,11 +167,10 @@ save_user_input <- function(trial, pub_year, data_type, outcome_name, section_na
 }
 
 # ----------------------------------------------------------------------
-# 4. UI
+# 5. UI
 # ----------------------------------------------------------------------
 ui <- fluidPage(
   titlePanel("Multi-Type Data Extraction Assistant – Generate LLM Prompt for Arm‑Level Data"),
-
   sidebarLayout(
     sidebarPanel(
       width = 3,
@@ -162,7 +201,6 @@ ui <- fluidPage(
                "the corresponding sheet (binary_data, survival, or continuous) of your",
                "clinical_studies_data.xlsx file.")
     ),
-
     mainPanel(
       width = 9,
       tabsetPanel(
@@ -191,7 +229,7 @@ ui <- fluidPage(
 )
 
 # ----------------------------------------------------------------------
-# 5. Server
+# 6. Server
 # ----------------------------------------------------------------------
 server <- function(input, output, session) {
 
@@ -274,9 +312,42 @@ server <- function(input, output, session) {
     else return(continuous_data$col_names)
   })
 
+  # 根据数据字典生成列约束描述
+  get_column_constraints_text <- function(dtype, colname) {
+    if (!dtype %in% names(data_dict)) return("")
+    col_dict <- data_dict[[dtype]][[colname]]
+    if (is.null(col_dict)) return("")
+    parts <- c()
+    if ("data_type" %in% names(col_dict)) {
+      parts <- c(parts, paste0("type: ", col_dict$data_type))
+    }
+    if ("allowed_values" %in% names(col_dict)) {
+      parts <- c(parts, paste0("allowed: ", col_dict$allowed_values))
+    }
+    if ("range" %in% names(col_dict)) {
+      parts <- c(parts, paste0("range: ", col_dict$range))
+    }
+    if ("length" %in% names(col_dict)) {
+      parts <- c(parts, paste0("max length: ", col_dict$length))
+    }
+    if ("required" %in% names(col_dict) && tolower(col_dict$required) == "true") {
+      parts <- c(parts, "required")
+    }
+    if ("pattern" %in% names(col_dict)) {
+      parts <- c(parts, paste0("pattern: ", col_dict$pattern))
+    }
+    if ("description" %in% names(col_dict) && !is.na(col_dict$description)) {
+      parts <- c(parts, paste0("desc: ", col_dict$description))
+    }
+    if ("example" %in% names(col_dict) && !is.na(col_dict$example)) {
+      parts <- c(parts, paste0("e.g., ", col_dict$example))
+    }
+    if (length(parts) == 0) return("")
+    paste0(" (", paste(parts, collapse = "; "), ")")
+  }
+
   observeEvent(input$save_inputs, {
     req(input$trial, input$pub_year)
-    # 保存 Table 1
     if (!is.null(input$table1_text) && input$table1_text != "") {
       tryCatch({
         save_user_input(trial = input$trial,
@@ -289,7 +360,6 @@ server <- function(input, output, session) {
         showNotification(paste("保存 Table 1 失败:", e$message), type = "error")
       })
     }
-    # 保存 Subgroup
     if (!is.null(input$outcome) && input$outcome != "" &&
         !is.null(input$subgroup_text) && input$subgroup_text != "") {
       tryCatch({
@@ -306,6 +376,26 @@ server <- function(input, output, session) {
     showNotification("User inputs saved successfully.", type = "message")
   })
 
+  extraction_guide_detail <- reactive({
+    dt <- input$data_type
+    if (dt == "binary") {
+      return("Extract the event rate (%) for each treatment group and subgroup category. If 95% confidence intervals are provided (e.g., '36.8 (24.3-49.4)'), extract the rate and optionally the CI bounds into appropriate columns (e.g., rate, ci_lower, ci_upper).")
+    } else if (dt == "survival") {
+      guide <- "Extract the following survival-related statistics from the subgroup results table:\n"
+      cols <- get_target_columns()
+      if ("hr" %in% cols) guide <- paste0(guide, "   - Hazard Ratio (HR)\n")
+      if ("hr_lci" %in% cols && "hr_uci" %in% cols) guide <- paste0(guide, "   - 95% CI for HR (lower and upper)\n")
+      if ("n1" %in% cols && "n2" %in% cols) guide <- paste0(guide, "   - Number of patients in each group (n1, n2)\n")
+      if ("treatment_1_event_number" %in% cols && "treatment_2_event_number" %in% cols) guide <- paste0(guide, "   - Number of events in each group\n")
+      if ("median_follow_up_months" %in% cols) guide <- paste0(guide, "   - Median follow-up (months)\n")
+      if (any(c("te", "se_te") %in% cols)) guide <- paste0(guide, "   - Log HR (te) and its SE (se_te)\n")
+      guide <- paste0(guide, "Use 'n.d.' for missing values.")
+      return(guide)
+    } else {
+      return("Extract the mean (or mean change) and SD (or 95% CI) for each group. Use 'n.d.' if missing.")
+    }
+  })
+
   prompt_text <- reactive({
     req(input$study_id, input$trial, input$pub_year, input$outcome)
     if (is.null(input$table1_text) || input$table1_text == "") {
@@ -319,24 +409,23 @@ server <- function(input, output, session) {
 
     data_type <- input$data_type
     outcome_type <- ifelse(data_type == "binary", "Binary",
-                           ifelse(data_type == "survival", "Survival", "Continuous"))
-    extraction_guide <- switch(data_type,
-                               binary = "Extract the event rate (%) for each treatment group and subgroup category. ",
-                               survival = "Extract the median survival time (or HR with confidence intervals) for each treatment group and subgroup category. ",
-                               continuous = "Extract the mean (or mean change) and standard deviation (or 95% CI) for each treatment group and subgroup category. ")
+                           ifelse(data_type == "survival", "Survival (time-to-event)", "Continuous"))
 
     target_cols <- get_target_columns()
     if (length(target_cols) == 0) {
-      showNotification("No column information found for selected data type.", type = "error")
+      showNotification(paste("No columns found for", toupper(data_type), "data. Check Excel sheet."), type = "error")
       return("")
     }
-    output_cols_str <- paste(target_cols, collapse = "\n   - ")
+
+    col_descriptions <- c()
+    for (col in target_cols) {
+      constraint_text <- get_column_constraints_text(data_type, col)
+      col_descriptions <- c(col_descriptions, paste0("   - `", col, "`", constraint_text))
+    }
+    output_cols_str <- paste(col_descriptions, collapse = "\n")
 
     paste0(
-      "You are an assistant that helps extract arm‑level data from clinical trial subgroup tables. ",
-      "I will provide you with raw text copied from a PDF containing Table 1 (baseline characteristics) ",
-      "and a subgroup analysis results table. Your task is to convert this information into a structured ",
-      "arm‑level dataset as specified.\n\n",
+      "You are an assistant that extracts arm‑level data from clinical trial subgroup tables.\n\n",
       "## Study Metadata\n",
       "- Study ID: ", input$study_id, "\n",
       "- Trial: ", input$trial, "\n",
@@ -346,35 +435,21 @@ server <- function(input, output, session) {
       "- Outcome: ", input$outcome, "\n",
       "- Period: ", input$period, "\n\n",
       "## Raw Table 1 (Baseline Characteristics)\n",
-      "The following text is copied directly from the PDF. It contains the number of patients (n) for each ",
-      "treatment group and subgroup category. Please extract this information accurately.\n\n",
       "```\n", input$table1_text, "\n```\n\n",
       "## Raw Subgroup Results Table\n",
-      "The following text is copied directly from the PDF. It contains the outcome results for ",
-      "each treatment group and subgroup category. ", extraction_guide,
-      "Values may include 95% confidence intervals (e.g., '36.8 (24.3-49.4)'). ",
-      "Use 'n.d.' for not determined.\n\n",
       "```\n", input$subgroup_text, "\n```\n\n",
       "## Instructions\n",
-      "1. Parse the provided raw text to extract the following for each subgroup and treatment arm:\n",
-      "   - Subgroup name\n",
-      "   - Subgroup category (e.g., Male/Female, <65/>=65)\n",
-      "   - Treatment group name (e.g., 'Nivolumab+Chemo', 'Chemotherapy alone')\n",
+      "1. Parse the text to extract for each subgroup and treatment arm:\n",
+      "   - Subgroup name, category, treatment group names\n",
       "   - Number of patients (n) from Table 1\n",
-      "   - The outcome measure (rate, median, HR, mean, etc.) from the subgroup results table\n",
-      "2. Combine the data to produce a single arm‑level dataset with the following columns (in this exact order):\n",
-      "   - `", paste(target_cols, collapse = "`\n   - `"), "`\n",
-      "3. For each combination of subgroup, subgroup_option, and treatment, create one row.\n",
-      "4. If a treatment group has no patients (n=0) in Table 1, set the outcome measure to 'n.d.'.\n",
-      "5. If n is missing for a particular subgroup_option/treatment combination, keep it empty.\n",
-      "6. Return the result as a **plain text table with tab-separated values (TSV)**.\n",
-      "   - The first row must contain the column headers (exactly the column names listed above).\n",
-      "   - Each subsequent row corresponds to one arm-level record, with values in the same order as the headers.\n",
-      "   - Do not include any extra commentary, code fences, or markdown formatting.\n",
-      "   - The output should be directly copyable and pastable into Excel, where it will automatically split into columns.\n",
-      "\n",
-      "### Output columns (order must match the TSV headers):\n",
-      "   - ", output_cols_str
+      "   - Outcome measures (as described: ", extraction_guide_detail(), ")\n",
+      "2. Combine into one row per subgroup/treatment combination.\n",
+      "3. If n=0 for a treatment arm, set outcome to 'n.d.'.\n",
+      "4. Follow column constraints strictly.\n",
+      "5. Return **plain TSV** with headers exactly as below, no extra text.\n\n",
+      "### Output columns (order must match):\n",
+      output_cols_str, "\n\n",
+      "Now produce the TSV table:"
     )
   })
 
@@ -385,20 +460,19 @@ server <- function(input, output, session) {
   observeEvent(input$generate_prompt, {
     txt <- prompt_text()
     if (txt == "") {
-      showNotification("No prompt generated. Please fill in all required fields and paste text.", type = "error")
+      showNotification("No prompt generated. Please fill in all fields.", type = "error")
       return()
     }
     tryCatch({
       write_clip(txt)
       showNotification("Prompt copied to clipboard!", type = "message")
     }, error = function(e) {
-      showNotification("Could not copy to clipboard. You can manually select and copy the text.",
-                       type = "warning")
+      showNotification("Could not copy to clipboard. Select and copy manually.", type = "warning")
     })
   })
 }
 
 # ----------------------------------------------------------------------
-# 6. Run app
+# 7. Run app
 # ----------------------------------------------------------------------
 shinyApp(ui, server)
