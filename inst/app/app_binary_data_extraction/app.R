@@ -1,16 +1,19 @@
 # ===============================
 # Multi-Type Data Extraction Assistant App
 # ===============================
-# 所有参考数据（studies_info, binary_data, survival, continuous）从包的 clinical_studies_data.xlsx 只读加载
-# 用户输入保存在 user_logs.xlsx 的 my_inputs 表中
-# 数据字典（data_dictionary）仅用于增强 prompt，应用不会修改字典
+# 增强功能：
+# - 图片可从剪贴板粘贴（需 HTTPS/localhost）或手动上传
+# - 图片单独存储为 RDS 文件（避免 Excel 字符数限制）
+# - 预览图更大，点击后模态框支持缩放滑块、拖拽平移、滚轮缩放
 
 library(shiny)
+library(shinyjs)
 library(clipr)
 library(readxl)
 library(dplyr)
 library(stringr)
 library(openxlsx)
+library(base64enc)   # 用于 base64encode
 
 # ----------------------------------------------------------------------
 # 1. File paths
@@ -50,7 +53,6 @@ load_sheet_data <- function(sheet_name) {
 # ----------------------------------------------------------------------
 load_data_dictionary <- function(file) {
   if (!file.exists(file)) return(list())
-  # 检查 sheet 是否存在
   sheets <- excel_sheets(file)
   if (!"data_dictionary" %in% sheets) {
     warning("data_dictionary sheet not found. Please run 'update_data_dictionary.R' to create it.")
@@ -61,9 +63,7 @@ load_data_dictionary <- function(file) {
     error = function(e) NULL
   )
   if (is.null(dict_df) || nrow(dict_df) == 0) return(list())
-  # 只保留 active 的行
   dict_df <- dict_df %>% filter(status == "active")
-  # 构建嵌套列表
   dict <- list()
   for (i in 1:nrow(dict_df)) {
     dtype <- dict_df$data_type[i]
@@ -73,7 +73,6 @@ load_data_dictionary <- function(file) {
     ct <- dict_df$constraint_type[i]
     cv <- dict_df$constraint_value[i]
     dict[[dtype]][[col]][[ct]] <- cv
-    # 附加其他字段
     if ("is_critical" %in% names(dict_df)) dict[[dtype]][[col]]$is_critical <- dict_df$is_critical[i]
     if ("example" %in% names(dict_df)) dict[[dtype]][[col]]$example <- dict_df$example[i]
     if ("notes" %in% names(dict_df)) dict[[dtype]][[col]]$notes <- dict_df$notes[i]
@@ -81,7 +80,6 @@ load_data_dictionary <- function(file) {
   return(dict)
 }
 
-# 加载参考数据
 studies_info <- read_reference_sheet("studies_info")
 if (is.null(studies_info) || nrow(studies_info) == 0) {
   studies_info <- data.frame(trial = character(), pub_year = integer(),
@@ -102,18 +100,17 @@ binary_data   <- load_sheet_data("binary_data")
 survival_data <- load_sheet_data("survival")
 continuous_data <- load_sheet_data("continuous")
 
-# 加载数据字典（只读）
 data_dict <- load_data_dictionary(pkg_file)
 
 # ----------------------------------------------------------------------
-# 4. User logs handling (unchanged)
+# 4. User logs handling (图片改用 RDS 存储)
 # ----------------------------------------------------------------------
 ensure_user_logs <- function() {
   if (!file.exists(user_logs)) {
     empty_df <- data.frame(trial = character(), pub_year = integer(),
                            data_type = character(), outcome_name = character(),
                            section_name = character(), free_text = character(),
-                           image_base64 = character(), stringsAsFactors = FALSE)
+                           stringsAsFactors = FALSE)
     wb <- createWorkbook()
     addWorksheet(wb, "my_inputs")
     writeData(wb, "my_inputs", empty_df, colNames = TRUE)
@@ -121,6 +118,13 @@ ensure_user_logs <- function() {
   }
 }
 ensure_user_logs()
+
+# 生成 RDS 图片文件名（与 user_logs.xlsx 同目录）
+get_image_filename <- function(trial, pub_year, data_type, outcome_name, section_name) {
+  fname <- paste0("user_images_", section_name, "_", trial, "_", pub_year,
+                  "_", data_type, "_", outcome_name, ".rds")
+  gsub("[^[:alnum:]_\\.-]", "_", fname)
+}
 
 read_user_inputs <- function(trial, pub_year, data_type = NULL, outcome_name = NULL, section_name = NULL) {
   if (!file.exists(user_logs)) return(data.frame())
@@ -133,6 +137,17 @@ read_user_inputs <- function(trial, pub_year, data_type = NULL, outcome_name = N
   if (!is.null(data_type)) df <- df %>% filter(data_type == !!data_type)
   if (!is.null(outcome_name)) df <- df %>% filter(outcome_name == !!outcome_name)
   if (!is.null(section_name)) df <- df %>% filter(section_name == !!section_name)
+
+  # 读取对应图片（如果存在）
+  df$image_base64 <- NA_character_
+  for (i in seq_len(nrow(df))) {
+    img_file <- get_image_filename(df$trial[i], df$pub_year[i],
+                                   df$data_type[i], df$outcome_name[i],
+                                   df$section_name[i])
+    if (file.exists(img_file)) {
+      df$image_base64[i] <- readRDS(img_file)
+    }
+  }
   df
 }
 
@@ -146,30 +161,152 @@ save_user_input <- function(trial, pub_year, data_type, outcome_name, section_na
     df <- data.frame(trial = character(), pub_year = integer(),
                      data_type = character(), outcome_name = character(),
                      section_name = character(), free_text = character(),
-                     image_base64 = character(), stringsAsFactors = FALSE)
+                     stringsAsFactors = FALSE)
   }
   idx <- which(df$trial == trial & df$pub_year == pub_year &
                  df$data_type == data_type & df$outcome_name == outcome_name &
                  df$section_name == section_name)
   if (length(idx) > 0) {
     df[idx, "free_text"] <- free_text
-    if (!is.na(image_base64)) df[idx, "image_base64"] <- image_base64
   } else {
     new_row <- data.frame(trial = trial, pub_year = pub_year, data_type = data_type,
                           outcome_name = outcome_name, section_name = section_name,
-                          free_text = free_text, image_base64 = image_base64,
+                          free_text = free_text,
                           stringsAsFactors = FALSE)
     df <- bind_rows(df, new_row)
   }
   wb <- loadWorkbook(user_logs)
   writeData(wb, "my_inputs", df, startCol = 1, startRow = 1, colNames = TRUE)
   saveWorkbook(wb, user_logs, overwrite = TRUE)
+
+  # 图片保存到 RDS 文件
+  img_file <- get_image_filename(trial, pub_year, data_type, outcome_name, section_name)
+  if (!is.na(image_base64) && nzchar(image_base64)) {
+    saveRDS(image_base64, img_file)
+  } else {
+    if (file.exists(img_file)) file.remove(img_file)
+  }
 }
 
 # ----------------------------------------------------------------------
 # 5. UI
 # ----------------------------------------------------------------------
 ui <- fluidPage(
+  useShinyjs(),
+  # 增强的 JavaScript：剪贴板读取 + 图片缩放平移功能
+  tags$script(HTML("
+    // 剪贴板读取
+    Shiny.addCustomMessageHandler('readClipboardImage', function(message) {
+      async function readClipboard() {
+        try {
+          if (!navigator.clipboard || !navigator.clipboard.read) {
+            return { error: 'Clipboard API not available. Use HTTPS or localhost.' };
+          }
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            for (const type of item.types) {
+              if (type.startsWith('image/')) {
+                const blob = await item.getType(type);
+                return new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve({ base64: reader.result });
+                  reader.onerror = () => resolve({ error: 'Failed to read image blob.' });
+                  reader.readAsDataURL(blob);
+                });
+              }
+            }
+          }
+          return { error: 'No image found in clipboard.' };
+        } catch (err) {
+          console.error('Clipboard error:', err);
+          return { error: err.message || 'Permission denied or unknown error.' };
+        }
+      }
+      readClipboard().then(result => {
+        if (result.base64) {
+          Shiny.setInputValue(message.inputId, result.base64, {priority: 'event'});
+        } else {
+          Shiny.setInputValue('clipboard_error', result.error, {priority: 'event'});
+        }
+      });
+    });
+
+    // 模态框内图片缩放、拖拽、滚轮
+    function initZoomableImage(modalId, imgId, sliderId, resetBtnId) {
+      const img = document.getElementById(imgId);
+      const slider = document.getElementById(sliderId);
+      const resetBtn = document.getElementById(resetBtnId);
+      if (!img || !slider) return;
+
+      let scale = 1;
+      let translateX = 0, translateY = 0;
+      let isDragging = false, startX, startY;
+
+      function updateTransform() {
+        img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        img.style.cursor = isDragging ? 'grabbing' : 'grab';
+      }
+
+      slider.addEventListener('input', (e) => {
+        scale = parseFloat(e.target.value) / 100;
+        updateTransform();
+      });
+
+      resetBtn.addEventListener('click', () => {
+        scale = 1;
+        translateX = 0; translateY = 0;
+        slider.value = 100;
+        updateTransform();
+      });
+
+      img.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        img.style.cursor = 'grabbing';
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX;
+        translateY = e.clientY - startY;
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+        img.style.cursor = 'grab';
+      });
+
+      img.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -5 : 5;
+        let newScale = Math.min(200, Math.max(50, scale * 100 + delta));
+        scale = newScale / 100;
+        slider.value = newScale;
+        updateTransform();
+      }, { passive: false });
+    }
+
+    function copyModalImageToClipboard(imgId) {
+      const img = document.getElementById(imgId);
+      if (!img) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(blob => {
+        try {
+          navigator.clipboard.write([new ClipboardItem({[blob.type]: blob})]);
+          alert('Image copied to clipboard!');
+        } catch (err) {
+          alert('Copy failed: ' + err);
+        }
+      });
+    }
+  ")),
   titlePanel("Multi-Type Data Extraction Assistant – Generate LLM Prompt for Arm‑Level Data"),
   sidebarLayout(
     sidebarPanel(
@@ -208,15 +345,50 @@ ui <- fluidPage(
                  br(),
                  helpText("Copy the entire Table 1 from the PDF (including headers and numbers) and paste it here. ",
                           "The formatting can be messy; the LLM will interpret it."),
-                 textAreaInput("table1_text", "Table 1 text", rows = 15, width = "100%",
-                               placeholder = "Paste Table 1 content here...")
+                 textAreaInput("table1_text", "Table 1 text", rows = 10, width = "100%",
+                               placeholder = "Paste Table 1 content here..."),
+                 br(),
+                 fluidRow(
+                   column(4,
+                          actionButton("paste_table1_img", "Paste Image from Clipboard", icon = icon("clipboard")),
+                          helpText("Click to paste screenshot from clipboard.")
+                   ),
+                   column(4,
+                          fileInput("upload_table1_img", "Or choose file",
+                                    accept = c("image/png", "image/jpeg", "image/gif"))
+                   ),
+                   column(4,
+                          actionButton("clear_table1_img", "Clear Image", icon = icon("trash"))
+                   )
+                 ),
+                 br(),
+                 uiOutput("table1_img_preview"),
+                 textInput("table1_img_base64", label = NULL, value = "") %>% shinyjs::hidden(),
+                 textInput("clipboard_error", label = NULL, value = "") %>% shinyjs::hidden()
         ),
         tabPanel("Subgroup Results Text",
                  br(),
                  helpText("Copy the subgroup analysis results table (forest plot data) from the PDF and paste it here. ",
-                          "Include the subgroup names, categories, treatment groups, and the relevant statistics (e.g., rates with CIs, median survival, HR, mean difference)."),
-                 textAreaInput("subgroup_text", "Subgroup results text", rows = 15, width = "100%",
-                               placeholder = "Paste subgroup results here...")
+                          "Include the subgroup names, categories, treatment groups, and the relevant statistics."),
+                 textAreaInput("subgroup_text", "Subgroup results text", rows = 10, width = "100%",
+                               placeholder = "Paste subgroup results here..."),
+                 br(),
+                 fluidRow(
+                   column(4,
+                          actionButton("paste_subgroup_img", "Paste Image from Clipboard", icon = icon("clipboard")),
+                          helpText("Click to paste screenshot from clipboard.")
+                   ),
+                   column(4,
+                          fileInput("upload_subgroup_img", "Or choose file",
+                                    accept = c("image/png", "image/jpeg", "image/gif"))
+                   ),
+                   column(4,
+                          actionButton("clear_subgroup_img", "Clear Image", icon = icon("trash"))
+                   )
+                 ),
+                 br(),
+                 uiOutput("subgroup_img_preview"),
+                 textInput("subgroup_img_base64", label = NULL, value = "") %>% shinyjs::hidden()
         ),
         tabPanel("Generated Prompt",
                  br(),
@@ -233,6 +405,11 @@ ui <- fluidPage(
 # ----------------------------------------------------------------------
 server <- function(input, output, session) {
 
+  images <- reactiveValues(
+    table1 = NULL,
+    subgroup = NULL
+  )
+
   study_metadata <- reactiveValues(study_id = "", trial = "", pub_year = "", phase = "")
 
   current_study_info <- reactive({
@@ -246,6 +423,15 @@ server <- function(input, output, session) {
     )
   })
 
+  # 剪贴板错误提示
+  observeEvent(input$clipboard_error, {
+    if (!is.null(input$clipboard_error) && input$clipboard_error != "") {
+      showNotification(paste("Clipboard error:", input$clipboard_error),
+                       type = "error", duration = 6)
+    }
+  })
+
+  # 切换研究时加载已保存数据
   observeEvent(input$existing_study, {
     if (input$existing_study == "New study") {
       updateTextInput(session, "study_id", value = "")
@@ -254,6 +440,10 @@ server <- function(input, output, session) {
       updateTextInput(session, "phase", value = "")
       updateTextAreaInput(session, "table1_text", value = "")
       updateTextAreaInput(session, "subgroup_text", value = "")
+      images$table1 <- NULL
+      images$subgroup <- NULL
+      updateTextInput(session, "table1_img_base64", value = "")
+      updateTextInput(session, "subgroup_img_base64", value = "")
     } else {
       info <- current_study_info()
       if (!is.null(info)) {
@@ -265,7 +455,17 @@ server <- function(input, output, session) {
         saved_table1 <- read_user_inputs(trial = info$trial, pub_year = info$pub_year,
                                          data_type = "Overall", outcome_name = "Overall",
                                          section_name = "table_one")
-        updateTextAreaInput(session, "table1_text", value = if (nrow(saved_table1) > 0) saved_table1$free_text[1] else "")
+        if (nrow(saved_table1) > 0) {
+          updateTextAreaInput(session, "table1_text", value = saved_table1$free_text[1])
+          img_base64 <- saved_table1$image_base64[1]
+          if (!is.na(img_base64) && img_base64 != "") {
+            images$table1 <- img_base64
+            updateTextInput(session, "table1_img_base64", value = img_base64)
+          } else {
+            images$table1 <- NULL
+            updateTextInput(session, "table1_img_base64", value = "")
+          }
+        }
       }
     }
   })
@@ -273,11 +473,25 @@ server <- function(input, output, session) {
   observeEvent(list(input$existing_study, input$data_type, input$outcome), {
     if (input$existing_study != "New study") {
       info <- current_study_info()
-      if (!is.null(info)) {
+      if (!is.null(info) && !is.null(input$outcome) && input$outcome != "") {
         saved_subgroup <- read_user_inputs(trial = info$trial, pub_year = info$pub_year,
                                            data_type = input$data_type, outcome_name = input$outcome,
                                            section_name = "subgroup")
-        updateTextAreaInput(session, "subgroup_text", value = if (nrow(saved_subgroup) > 0) saved_subgroup$free_text[1] else "")
+        if (nrow(saved_subgroup) > 0) {
+          updateTextAreaInput(session, "subgroup_text", value = saved_subgroup$free_text[1])
+          img_base64 <- saved_subgroup$image_base64[1]
+          if (!is.na(img_base64) && img_base64 != "") {
+            images$subgroup <- img_base64
+            updateTextInput(session, "subgroup_img_base64", value = img_base64)
+          } else {
+            images$subgroup <- NULL
+            updateTextInput(session, "subgroup_img_base64", value = "")
+          }
+        } else {
+          updateTextAreaInput(session, "subgroup_text", value = "")
+          images$subgroup <- NULL
+          updateTextInput(session, "subgroup_img_base64", value = "")
+        }
       }
     }
   })
@@ -312,7 +526,6 @@ server <- function(input, output, session) {
     else return(continuous_data$col_names)
   })
 
-  # 根据数据字典生成列约束描述
   get_column_constraints_text <- function(dtype, colname) {
     if (!dtype %in% names(data_dict)) return("")
     col_dict <- data_dict[[dtype]][[colname]]
@@ -346,8 +559,159 @@ server <- function(input, output, session) {
     paste0(" (", paste(parts, collapse = "; "), ")")
   }
 
+  # ----- 图片处理：粘贴、上传、清除 -----
+  observeEvent(input$paste_table1_img, {
+    session$sendCustomMessage("readClipboardImage", list(inputId = "table1_img_base64"))
+  })
+
+  observeEvent(input$paste_subgroup_img, {
+    session$sendCustomMessage("readClipboardImage", list(inputId = "subgroup_img_base64"))
+  })
+
+  observeEvent(input$upload_table1_img, {
+    req(input$upload_table1_img)
+    inFile <- input$upload_table1_img
+    base64 <- paste0("data:", inFile$type, ";base64,", base64encode(inFile$datapath))
+    images$table1 <- base64
+    updateTextInput(session, "table1_img_base64", value = base64)
+  })
+
+  observeEvent(input$upload_subgroup_img, {
+    req(input$upload_subgroup_img)
+    inFile <- input$upload_subgroup_img
+    base64 <- paste0("data:", inFile$type, ";base64,", base64encode(inFile$datapath))
+    images$subgroup <- base64
+    updateTextInput(session, "subgroup_img_base64", value = base64)
+  })
+
+  observeEvent(input$table1_img_base64, {
+    if (!is.null(input$table1_img_base64) && input$table1_img_base64 != "") {
+      images$table1 <- input$table1_img_base64
+    }
+  })
+
+  observeEvent(input$subgroup_img_base64, {
+    if (!is.null(input$subgroup_img_base64) && input$subgroup_img_base64 != "") {
+      images$subgroup <- input$subgroup_img_base64
+    }
+  })
+
+  observeEvent(input$clear_table1_img, {
+    images$table1 <- NULL
+    updateTextInput(session, "table1_img_base64", value = "")
+    reset("upload_table1_img")
+  })
+
+  observeEvent(input$clear_subgroup_img, {
+    images$subgroup <- NULL
+    updateTextInput(session, "subgroup_img_base64", value = "")
+    reset("upload_subgroup_img")
+  })
+
+  # 预览图（尺寸加大）
+  output$table1_img_preview <- renderUI({
+    if (is.null(images$table1)) return(NULL)
+    tagList(
+      tags$img(src = images$table1,
+               style = "max-height: 350px; max-width: 100%; cursor: pointer; border: 1px solid #ddd; padding: 3px;",
+               onclick = "Shiny.setInputValue('show_table1_modal', Math.random())"),
+      helpText("点击图片可放大、缩放、拖拽查看细节。")
+    )
+  })
+
+  output$subgroup_img_preview <- renderUI({
+    if (is.null(images$subgroup)) return(NULL)
+    tagList(
+      tags$img(src = images$subgroup,
+               style = "max-height: 350px; max-width: 100%; cursor: pointer; border: 1px solid #ddd; padding: 3px;",
+               onclick = "Shiny.setInputValue('show_subgroup_modal', Math.random())"),
+      helpText("点击图片可放大、缩放、拖拽查看细节。")
+    )
+  })
+
+  # 增强的模态框（含缩放控件）
+  observeEvent(input$show_table1_modal, {
+    if (!is.null(images$table1)) {
+      showModal(modalDialog(
+        title = "Table 1 Screenshot",
+        tags$div(
+          style = "overflow: hidden; max-height: 75vh; display: flex; flex-direction: column;",
+          tags$div(
+            style = "margin-bottom: 10px; display: flex; align-items: center; gap: 10px;",
+            tags$label("Zoom:"),
+            tags$input(id = "table1_zoom_slider", type = "range", min = "50", max = "200", value = "100", step = "5",
+                       style = "width: 200px;"),
+            actionButton("table1_zoom_reset", "Reset", class = "btn-sm")
+          ),
+          tags$div(
+            style = "overflow: auto; max-height: 60vh; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;",
+            tags$img(src = images$table1,
+                     id = "modal_table1_img",
+                     style = "max-width: 100%; height: auto; transform-origin: 0 0; transition: transform 0.05s; cursor: grab;")
+          )
+        ),
+        footer = tagList(
+          actionButton("copy_modal_table1", "Copy to Clipboard", icon = icon("copy")),
+          modalButton("Close")
+        ),
+        size = "l",
+        easyClose = TRUE
+      ))
+      shinyjs::runjs("
+        setTimeout(function() {
+          initZoomableImage('', 'modal_table1_img', 'table1_zoom_slider', 'table1_zoom_reset');
+        }, 100);
+      ")
+    }
+  })
+
+  observeEvent(input$show_subgroup_modal, {
+    if (!is.null(images$subgroup)) {
+      showModal(modalDialog(
+        title = "Subgroup Results Screenshot",
+        tags$div(
+          style = "overflow: hidden; max-height: 75vh; display: flex; flex-direction: column;",
+          tags$div(
+            style = "margin-bottom: 10px; display: flex; align-items: center; gap: 10px;",
+            tags$label("Zoom:"),
+            tags$input(id = "subgroup_zoom_slider", type = "range", min = "50", max = "200", value = "100", step = "5",
+                       style = "width: 200px;"),
+            actionButton("subgroup_zoom_reset", "Reset", class = "btn-sm")
+          ),
+          tags$div(
+            style = "overflow: auto; max-height: 60vh; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;",
+            tags$img(src = images$subgroup,
+                     id = "modal_subgroup_img",
+                     style = "max-width: 100%; height: auto; transform-origin: 0 0; transition: transform 0.05s; cursor: grab;")
+          )
+        ),
+        footer = tagList(
+          actionButton("copy_modal_subgroup", "Copy to Clipboard", icon = icon("copy")),
+          modalButton("Close")
+        ),
+        size = "l",
+        easyClose = TRUE
+      ))
+      shinyjs::runjs("
+        setTimeout(function() {
+          initZoomableImage('', 'modal_subgroup_img', 'subgroup_zoom_slider', 'subgroup_zoom_reset');
+        }, 100);
+      ")
+    }
+  })
+
+  observeEvent(input$copy_modal_table1, {
+    shinyjs::runjs("copyModalImageToClipboard('modal_table1_img');")
+  })
+
+  observeEvent(input$copy_modal_subgroup, {
+    shinyjs::runjs("copyModalImageToClipboard('modal_subgroup_img');")
+  })
+
+  # ----- 保存输入 -----
   observeEvent(input$save_inputs, {
     req(input$trial, input$pub_year)
+    # Table 1
     if (!is.null(input$table1_text) && input$table1_text != "") {
       tryCatch({
         save_user_input(trial = input$trial,
@@ -355,11 +719,13 @@ server <- function(input, output, session) {
                         data_type = "Overall",
                         outcome_name = "Overall",
                         section_name = "table_one",
-                        free_text = input$table1_text)
+                        free_text = input$table1_text,
+                        image_base64 = if (!is.null(images$table1)) images$table1 else NA_character_)
       }, error = function(e) {
         showNotification(paste("保存 Table 1 失败:", e$message), type = "error")
       })
     }
+    # Subgroup
     if (!is.null(input$outcome) && input$outcome != "" &&
         !is.null(input$subgroup_text) && input$subgroup_text != "") {
       tryCatch({
@@ -368,7 +734,8 @@ server <- function(input, output, session) {
                         data_type = input$data_type,
                         outcome_name = input$outcome,
                         section_name = "subgroup",
-                        free_text = input$subgroup_text)
+                        free_text = input$subgroup_text,
+                        image_base64 = if (!is.null(images$subgroup)) images$subgroup else NA_character_)
       }, error = function(e) {
         showNotification(paste("保存 Subgroup 失败:", e$message), type = "error")
       })
@@ -376,6 +743,7 @@ server <- function(input, output, session) {
     showNotification("User inputs saved successfully.", type = "message")
   })
 
+  # ----- Prompt 生成（保持不变）-----
   extraction_guide_detail <- reactive({
     dt <- input$data_type
     if (dt == "binary") {
