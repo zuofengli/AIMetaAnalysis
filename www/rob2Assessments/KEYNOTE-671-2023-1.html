@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoB 2 Assessment – KEYNOTE-671 (EFS)</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background-color: #f9f9f9; color: #1e1e1e; }
+  h2 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 5px; margin-top: 30px; }
+  table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 30px; table-layout: fixed; word-wrap: break-word; }
+  th { background-color: #2c3e50; color: white; font-weight: 600; padding: 12px 8px; text-align: left; border: 1px solid #ddd; }
+  td { padding: 10px 8px; border: 1px solid #ddd; vertical-align: top; }
+  tr:nth-child(even) { background-color: #f2f2f2; }
+  .judgement { font-weight: bold; background-color: #e8f4f8; }
+  .low-risk { color: #1e7e34; }
+  .some-concerns { color: #d39e00; }
+  .high-risk { color: #c82333; }
+  .quote { font-style: italic; color: #4a4a4a; }
+  .note { font-size: 0.95em; }
+  .header-info { background: #e9ecef; }
+</style>
+</head>
+<body>
+<h1>Risk of Bias 2 (RoB 2) Assessment Report</h1>
+<p><strong>Study:</strong> KEYNOTE-671 (NCT03425643) – Wakelee et al., N Engl J Med 2023;389:491-503<br>
+<strong>Outcome assessed:</strong> Event-free survival (EFS) – HR 0.58 (95% CI 0.46–0.72), 24‑month EFS 62.4% vs 40.6%<br>
+<strong>Assessment date:</strong> 2026-04-23 | <strong>Assessor:</strong> DeepSeek</p>
+
+<!-- TABLE 1: BASIC INFORMATION -->
+<h2>1. Basic Information</h2>
+<table>
+<thead><tr><th>Item</th><th>Details</th><th>Source / Note</th></tr></thead>
+<tbody>
+<tr><td>Unique ID</td><td>KEYNOTE-671-2023-1</td><td>From studies_info</td></tr>
+<tr><td>Study ID / Trial</td><td>KEYNOTE-671</td><td>Phase 3, double‑blind, placebo‑controlled</td></tr>
+<tr><td>Reference</td><td>DOI: 10.1056/NEJMoa2302983<br>Wakelee H, et al. N Engl J Med 2023;389:491-503.</td><td>Published 2023-08-10</td></tr>
+<tr><td>Experimental</td><td>Neoadjuvant pembrolizumab (200 mg Q3W) + cisplatin‑based chemotherapy ×4 cycles → surgery → adjuvant pembrolizumab (200 mg Q3W up to 13 cycles)</td><td>Perioperative immunotherapy + chemo</td></tr>
+<tr><td>Comparator</td><td>Neoadjuvant placebo + cisplatin‑based chemotherapy ×4 cycles → surgery → adjuvant placebo (up to 13 cycles)</td><td>Chemotherapy alone with placebo</td></tr>
+<tr><td>Outcome</td><td>Event‑free survival (EFS) – dual primary endpoint</td><td>Investigator‑assessed</td></tr>
+<tr><td>Results</td><td>HR 0.58 (95% CI 0.46‑0.72); P&lt;0.001; 24‑month EFS 62.4% vs 40.6%</td><td>First interim analysis, median FU 25.2 mo</td></tr>
+<tr><td>Aim of analysis</td><td>Assignment to intervention (intention‑to‑treat effect)</td><td>ITT population</td></tr>
+<tr><td>Sources used</td><td>Journal article (NEJM) including Supplementary Appendix</td><td>Protocol & SAP referenced</td></tr>
+<tr><td>Overall risk of bias</td><td class="low-risk"><strong>Low risk</strong></td><td>All domains low risk</td></tr>
+</tbody>
+</table>
+
+<!-- TABLE 2: DOMAIN 1 – RANDOMISATION PROCESS -->
+<h2>2. Domain 1: Randomisation process <span style="font-weight:normal; margin-left:20px;">→ Judgement: <span class="low-risk">Low risk</span></span></h2>
+<table>
+<thead><tr><th style="width:25%">Question</th><th style="width:8%">Answer</th><th style="width:27%">Explanation & Evidence (English)</th><th style="width:20%">Original Quote</th><th style="width:20%">Chinese Explanation</th></tr></thead>
+<tbody>
+<tr><td>1.1 Was the allocation sequence random?</td><td>Y</td><td>Central randomisation using an interactive response system ensures a truly random sequence.</td><td class="quote">"Randomization was performed centrally with the use of an interactive response system."</td><td>使用中央交互式应答系统进行随机化，序列产生合理。</td></tr>
+<tr><td>1.2 Was the allocation sequence concealed until participants were enrolled and assigned to interventions?</td><td>Y</td><td>Central randomisation guarantees allocation concealment; no possibility of foreknowledge.</td><td class="quote">"Randomization was performed centrally with the use of an interactive response system."</td><td>中央随机化，分配隐藏充分。</td></tr>
+<tr><td>1.3 Did baseline differences between intervention groups suggest a problem with the randomisation process?</td><td>N</td><td>Table 1 shows well‑balanced baseline characteristics; no important imbalances.</td><td class="quote">"The demographic and disease characteristics of the participants at baseline were balanced between the two groups (Table 1)."</td><td>基线特征均衡，无问题。</td></tr>
+</tbody>
+</table>
+
+<!-- TABLE 3: DOMAIN 2 – DEVIATIONS FROM INTENDED INTERVENTIONS -->
+<h2>3. Domain 2: Deviations from intended interventions <span style="font-weight:normal; margin-left:20px;">→ Judgement: <span class="low-risk">Low risk</span></span></h2>
+<table>
+<thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence (English)</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+<tbody>
+<tr><td>2.1 Were participants aware of their assigned intervention during the trial?</td><td>N</td><td>Double‑blind, placebo‑controlled design. Placebo and pembrolizumab infusions were identical in appearance.</td><td class="quote">"In this double-blind, placebo-controlled, phase 3 trial..."</td><td>双盲安慰剂对照，受试者不知分组。</td></tr>
+<tr><td>2.2 Were carers and people delivering the interventions aware of participants' assigned intervention?</td><td>N</td><td>Blinding maintained for investigators and study personnel; placebo infusion identical.</td><td class="quote">"In this double-blind, placebo-controlled, phase 3 trial..."</td><td>双盲设计，医护不知分组。</td></tr>
+<tr><td>2.3 Were there deviations from the intended intervention that arose because of the trial context?</td><td>NA</td><td>Not applicable because 2.1 and 2.2 are both N.</td><td>—</td><td>不适用，参与者与医护均不知情。</td></tr>
+<tr><td>2.4 Were these deviations likely to have affected the outcome?</td><td>NA</td><td>Not applicable (2.3 is NA).</td><td>—</td><td>不适用。</td></tr>
+<tr><td>2.5 Were these deviations from intended intervention balanced between groups?</td><td>NA</td><td>Not applicable (2.4 is NA).</td><td>—</td><td>不适用。</td></tr>
+<tr><td>2.6 Was an appropriate analysis used to estimate the effect of assignment to intervention?</td><td>Y</td><td>ITT analysis including all randomised participants; stratified Cox model was used.</td><td class="quote">"Efficacy was assessed in the intention-to-treat population (which included all the participants who had undergone randomization)."</td><td>采用ITT分析，方法正确。</td></tr>
+<tr><td>2.7 Was there potential for a substantial impact (on the result) of the failure to analyse participants in the group to which they were randomized?</td><td>NA</td><td>Not applicable because 2.6 is Y.</td><td>—</td><td>不适用。</td></tr>
+</tbody>
+</table>
+
+<!-- TABLE 4: DOMAIN 3 – MISSING OUTCOME DATA -->
+<h2>4. Domain 3: Missing outcome data <span style="font-weight:normal; margin-left:20px;">→ Judgement: <span class="low-risk">Low risk</span></span></h2>
+<table>
+<thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence (English)</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+<tbody>
+<tr><td>3.1 Were data for this outcome available for all, or nearly all, participants randomized?</td><td>Y</td><td>ITT analysis included all 797 randomised participants; Kaplan‑Meier curves reflect full cohort.</td><td class="quote">"Efficacy was assessed in the intention-to-treat population (which included all the participants who had undergone randomization)."</td><td>ITT分析包含全部随机化受试者，数据完整。</td></tr>
+<tr><td>3.2 Is there evidence that the result was not biased by missing outcome data?</td><td>NA</td><td>Not applicable (3.1 = Y).</td><td>—</td><td>不适用。</td></tr>
+<tr><td>3.3 Could missingness in the outcome depend on its true value?</td><td>NA</td><td>Not applicable (3.2 = NA).</td><td>—</td><td>不适用。</td></tr>
+</tbody>
+</table>
+
+<!-- TABLE 5: DOMAIN 4 – MEASUREMENT OF THE OUTCOME -->
+<h2>5. Domain 4: Measurement of the outcome <span style="font-weight:normal; margin-left:20px;">→ Judgement: <span class="low-risk">Low risk</span></span></h2>
+<table>
+<thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence (English)</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+<tbody>
+<tr><td>4.1 Was the method of measuring the outcome inappropriate?</td><td>N</td><td>EFS defined according to RECIST 1.1 and standard criteria; appropriate for oncology trials.</td><td class="quote">"Event-free survival (defined as the time from randomization to the first occurrence of local progression that precluded the planned surgery, unresectable tumor, progression or recurrence according to the Response Evaluation Criteria in Solid Tumors, version 1.1, by the investigator’s assessment, or death from any cause)."</td><td>EFS定义标准，测量方法恰当。</td></tr>
+<tr><td>4.2 Could measurement or ascertainment of the outcome have differed between intervention groups?</td><td>N</td><td>Identical imaging schedule and RECIST criteria applied to both groups; blinding prevents differential ascertainment.</td><td class="quote">"Computed tomography (strongly preferred) or magnetic resonance imaging of the chest and abdomen was performed during screening, throughout all treatment phases, and during follow-up according to the schedule outlined in the Supplementary Methods section."</td><td>两组评估方法和时间相同，双盲避免偏倚。</td></tr>
+<tr><td>4.3 Were outcome assessors aware of the intervention received by study participants?</td><td>N</td><td>Trial was double‑blind; investigators assessing progression were unaware of treatment assignment.</td><td class="quote">"In this double-blind, placebo-controlled, phase 3 trial..."</td><td>双盲试验，评估者不知分组。</td></tr>
+<tr><td>4.4 Could assessment of the outcome have been influenced by knowledge of intervention received?</td><td>NA</td><td>Not applicable (4.3 = N).</td><td>—</td><td>不适用。</td></tr>
+<tr><td>4.5 Is it likely that assessment of the outcome was influenced by knowledge of intervention received?</td><td>NA</td><td>Not applicable (4.4 = NA).</td><td>—</td><td>不适用。</td></tr>
+</tbody>
+</table>
+
+<!-- TABLE 6: DOMAIN 5 – SELECTION OF THE REPORTED RESULT -->
+<h2>6. Domain 5: Selection of the reported result <span style="font-weight:normal; margin-left:20px;">→ Judgement: <span class="low-risk">Low risk</span></span></h2>
+<table>
+<thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence (English)</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+<tbody>
+<tr><td>5.1 Were the data that produced this result analysed in accordance with a pre‑specified analysis plan that was finalised before unblinded outcome data were available?</td><td>Y</td><td>Statistical analysis plan available in protocol Section 10; EFS was dual primary endpoint with pre‑specified methods.</td><td class="quote">"The statistical analysis plan is available in Section 10 of the protocol... Event-free survival and overall survival were estimated by means of the Kaplan–Meier method. The magnitude of the treatment differences ... was calculated with the use of a stratified Cox regression model."</td><td>分析计划预先制定，分析符合计划。</td></tr>
+<tr><td>5.2 ... multiple eligible outcome measurements within the outcome domain?</td><td>N</td><td>EFS had a single definition; no alternative measurements were reported selectively.</td><td class="quote">"The dual primary end points were event-free survival ... and overall survival."</td><td>EFS定义唯一，无选择性报告测量指标。</td></tr>
+<tr><td>5.3 ... multiple eligible analyses of the data?</td><td>N</td><td>Analysis followed pre‑specified stratified Cox model; no evidence of selecting among multiple analyses.</td><td class="quote">"Event-free survival and overall survival were estimated by means of the Kaplan–Meier method... stratified Cox regression model."</td><td>分析方法单一，预先指定，无选择性报告。</td></tr>
+</tbody>
+</table>
+
+<p style="margin-top:30px; font-size:0.9em; color:#555;">* RoB 2 assessment performed according to Cochrane Handbook, using the published article and supplementary appendix. All domain judgements are "Low risk".</p>
+</body>
+</html>

@@ -10,6 +10,9 @@ renv::install(c("shiny", "shinyjs", "DT", "httr", "jsonlite", "pdftools", "rentr
 renv::install(c("tidyverse"))
 renv::install(c("rhandsontable"))
 renv::install(c("openxlsx"))
+renv::install(c("robvis"))
+renv::install(c("metafor", "metaviz"))
+renv::install(c("janitor"))
 #
 # 1. 仅创建空模板（无自动填充）
 create_study_structure("CheckMate816", "primary")
@@ -55,4 +58,6 @@ library(AIMetaAnalysis)
 runBinaryDataExtraction()
 
 lessThan_65 yr ['<65 years']
+
+generate_latex_report("E:\\WorkStation\\Products\\AIMetaAnalysis\\www\\exports\\meta_report_20260420\\report_package")
 

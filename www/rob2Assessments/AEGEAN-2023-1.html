@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoB 2 Assessment – AEGEAN (EFS)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            vertical-align: top;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .answer-code {
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+        .quote {
+            font-style: italic;
+            color: #555;
+            background-color: #fef9e4;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Cochrane RoB 2 Assessment Tool</h1>
+    <h2>Study: AEGEAN – Perioperative Durvalumab + Chemotherapy vs Chemotherapy alone for Resectable Stage II-IIIB NSCLC</h2>
+    <p><strong>Unique ID:</strong> AEGEAN-2023-1 | <strong>Assessor:</strong> DeepSeek | <strong>Outcome:</strong> Event-Free Survival (EFS) by BICR | <strong>Aim:</strong> Effect of assignment to intervention (ITT effect)</p>
+
+    <!-- Basic Information Table -->
+    <h2>Basic Information</h2>
+    <table>
+        <thead>
+            <tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Unique ID</td><td>AEGEAN-2023-1</td><td>Unique identifier from studies_info</td><td>AEGEAN-2023-1</td><td>研究唯一ID</td></tr>
+            <tr><td>Study ID</td><td>AEGEAN</td><td>Trial name from studies_info</td><td>AEGEAN</td><td>试验名称</td></tr>
+            <tr><td>Reference</td><td>https://doi.org/10.1056/NEJMoa2304875</td><td>DOI of the publication</td><td>DOI: 10.1056/NEJMoa2304875</td><td>文献DOI</td></tr>
+            <tr><td>Experimental</td><td>PerioperativeDurvalumab</td><td>Durvalumab + platinum-based chemotherapy</td><td>durvalumab plus neoadjuvant chemotherapy, followed by adjuvant durvalumab</td><td>实验组：度伐利尤单抗+围手术期化疗</td></tr>
+            <tr><td>Comparator</td><td>Chemotherapy</td><td>Placebo + platinum-based chemotherapy</td><td>placebo plus neoadjuvant chemotherapy, followed by adjuvant placebo</td><td>对照组：安慰剂+化疗</td></tr>
+            <tr><td>Outcome</td><td>EFS</td><td>Event-free survival by blinded independent central review</td><td>event-free survival (evaluated in a blinded fashion by independent central review)</td><td>无事件生存期（BICR评估）</td></tr>
+            <tr><td>Results</td><td>HR 0.68 (95% CI 0.53-0.88)</td><td>Hazard ratio for disease progression, recurrence, or death</td><td>stratified hazard ratio for disease progression, recurrence, or death was 0.68 (95% CI, 0.53 to 0.88; P=0.004)</td><td>HR 0.68，95% CI 0.53-0.88，P=0.004</td></tr>
+            <tr><td>Aim</td><td>assignment to intervention</td><td>Intention-to-treat effect</td><td>primary analysis on modified intention-to-treat population</td><td>评估分配至干预组的效果（ITT效应）</td></tr>
+            <tr><td>Sources</td><td>Journal article(s)</td><td>Full publication in NEJM with supplementary appendix</td><td>N Engl J Med 2023;389:1672-84</td><td>来源：期刊文章及附录</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain 1 -->
+    <h2>Domain 1. Randomization process</h2>
+    <table>
+        <thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+        <tbody>
+            <tr><td>1.1 Was a random component used in the sequence generation process?</td><td class="answer-code">PY</td><td>Randomization stratified by stage and PD-L1, but specific method not described. As a large phase 3 trial, probably adequate.</td><td>"Randomization was stratified according to disease stage (II or III) and programmed death ligand 1 (PD-L1) expression (≥1% or <1%)." (Methods)</td><td>随机分组按疾病分期和PD-L1分层，但未描述具体方法。作为大型3期试验，可能使用了适当的随机序列生成。</td></tr>
+            <tr><td>1.2 Was the allocation sequence appropriately concealed?</td><td class="answer-code">PN</td><td>No explicit description of allocation concealment (e.g., central randomization, opaque envelopes). Probably not concealed.</td><td>No mention of allocation concealment in the provided text.</td><td>未明确描述分配隐藏方法（如中心随机、密封信封）。可能未实施分配隐藏。</td></tr>
+            <tr><td>1.3 Were there baseline imbalances that suggest a problem with the randomization process?</td><td class="answer-code">N</td><td>Baseline characteristics were largely balanced between groups.</td><td>"At baseline, the demographic and clinical characteristics of the patients and their planned neoadjuvant platinum therapies were largely balanced between the groups in the modified intention-to-treat population (Table 1)." (Results)</td><td>两组基线特征基本平衡，无迹象表明随机化过程有问题。</td></tr>
+            <tr><td colspan="5"><strong>Note for 1.1&1.2:</strong> "Randomization was stratified according to disease stage (II or III) and programmed death ligand 1 (PD-L1) expression (≥1% or <1%)." (Methods). No explicit sequence generation or concealment method. Inference: PY for 1.1, PN for 1.2.<br><strong>Note for 1.3:</strong> "At baseline, the demographic and clinical characteristics ... were largely balanced between the groups (Table 1)." No imbalances.</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain 2 -->
+    <h2>Domain 2. Deviations from intended interventions (ITT effect)</h2>
+    <table>
+        <thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+        <tbody>
+            <tr><td>2.1 Were participants aware of their assigned intervention during the trial?</td><td class="answer-code">N</td><td>Double-blind, placebo-controlled design means participants were unaware.</td><td>"double-blind, placebo-controlled" (Design)</td><td>双盲、安慰剂对照设计，参与者不知晓分组。</td></tr>
+            <tr><td>2.2 Were carers and people delivering the interventions aware of participants' assigned intervention?</td><td class="answer-code">N</td><td>Double-blind design means carers and providers were also unaware.</td><td>"double-blind, placebo-controlled" (Design)</td><td>双盲设计，照护者和干预实施者不知晓分组。</td></tr>
+            <tr><td>2.3 For the ITT effect, were there deviations from intended intervention that arose because of the trial context?</td><td class="answer-code">N</td><td>Deviations (e.g., not undergoing surgery due to disease progression, patient decision, adverse events) are typical in oncology trials, not specifically due to trial context.</td><td>"Patients who did not undergo surgery, n (%): Disease progression 27 (6.8) vs 30 (7.5); Unfit for surgery 15 (3.8) vs 10 (2.5); Patient decision 12 (3.0) vs 17 (4.2); Death 9 (2.3) vs 2 (0.5); Adverse event 7 (1.8) vs 5 (1.2)" (Table S5)</td><td>偏离（如因疾病进展、患者决定、不良事件未手术）是肿瘤试验中的常见情况，并非由试验背景引起。</td></tr>
+            <tr><td>2.4 Were these deviations likely to have affected the outcome?</td><td class="answer-code">NA</td><td>Not applicable because 2.3 = N.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td>2.5 Were these deviations balanced between groups?</td><td class="answer-code">NA</td><td>Not applicable because 2.3 = N.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td>2.6 Was an appropriate analysis used to estimate the effect of assignment to intervention?</td><td class="answer-code">Y</td><td>Primary analysis on modified ITT population using stratified log-rank test, including all randomized eligible patients.</td><td>"Efficacy analyses were performed in the modified intention-to-treat population" (Statistical Analysis) and "The log-rank test was used for the primary analysis of event-free survival, stratified by disease stage and PD-L1 expression."</td><td>主要分析在修改的ITT人群中进行，采用分层log-rank检验，纳入了所有随机化合格患者，分析方法适当。</td></tr>
+            <tr><td>2.7 Was there potential for a substantial impact of failure to analyse participants in the correct group?</td><td class="answer-code">NA</td><td>Not applicable because 2.6 = Y.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td colspan="5"><strong>Note for 2.1&2.2:</strong> "double-blind, placebo-controlled" (Design). Therefore participants and carers unaware (N).<br><strong>Note for 2.3:</strong> Table S5 shows reasons for not undergoing surgery; these are typical deviations not due to trial context (N).<br><strong>Note for 2.6:</strong> "Efficacy analyses were performed in the modified intention-to-treat population" – appropriate ITT analysis (Y).</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain 3 -->
+    <h2>Domain 3. Missing outcome data</h2>
+    <table>
+        <thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+        <tbody>
+            <tr><td>3.1 Were data for this outcome available for all, or nearly all, participants randomized?</td><td class="answer-code">Y</td><td>All patients in the mITT population were included in the primary analysis. No exclusions due to missing outcome data.</td><td>CONSORT diagram (Figure S3) shows 366 and 374 patients included in primary outcome analysis. "The efficacy population for the interim EFS analysis included all randomized stage III patients..." (Statistical analysis)</td><td>所有mITT人群患者均纳入主要分析，无因缺失数据排除。</td></tr>
+            <tr><td>3.2 Is there evidence that the result was not biased by missing outcome data?</td><td class="answer-code">NA</td><td>Not applicable because 3.1 = Y.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td>3.3 Could missingness in the outcome depend on its true value?</td><td class="answer-code">NA</td><td>Not applicable because 3.1 = Y.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td colspan="5"><strong>Note for 3.1:</strong> All randomized patients in the mITT population were analyzed. No missing outcome data issues. Answer Y.</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain 4 -->
+    <h2>Domain 4. Measurement of the outcome</h2>
+    <table>
+        <thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+        <tbody>
+            <tr><td>4.1 Was the method of measuring the outcome inappropriate?</td><td class="answer-code">N</td><td>EFS assessed by blinded independent central review using RECIST v1.1, a standard and validated method.</td><td>"Event-free survival (evaluated in a blinded fashion by independent central review)" (End Points) and "Tumors were evaluated per Response Evaluation Criteria in Solid Tumors version 1.1 (RECIST v1.1)" (Tumor Imaging)</td><td>EFS由盲态独立中心审查使用RECIST v1.1评估，方法标准且有效。</td></tr>
+            <tr><td>4.2 Could measurement or ascertainment of the outcome have differed between intervention groups?</td><td class="answer-code">N</td><td>Blinded independent central review ensures no differential measurement.</td><td>"blinded independent central review" (End Points)</td><td>盲态独立中心审查确保两组间无测量差异。</td></tr>
+            <tr><td>4.3 Were outcome assessors aware of the intervention received?</td><td class="answer-code">N</td><td>Outcome assessors (central review) were blinded.</td><td>"blinded independent central review" (End Points)</td><td>结果评估者（中心审查）对分组设盲。</td></tr>
+            <tr><td>4.4 Could assessment of the outcome have been influenced by knowledge of intervention received?</td><td class="answer-code">NA</td><td>Not applicable because 4.3 = N.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td>4.5 Is it likely that assessment was influenced by knowledge of intervention received?</td><td class="answer-code">NA</td><td>Not applicable because 4.3 = N.</td><td>NA</td><td>不适用</td></tr>
+            <tr><td colspan="5"><strong>Note for 4.1,4.2,4.3:</strong> "blinded independent central review" ensures appropriate method (N), no differential measurement (N), and blinded assessors (N).</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain 5 -->
+    <h2>Domain 5. Selection of the reported result</h2>
+    <table>
+        <thead><tr><th>Question</th><th>Answer</th><th>Explanation & Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr></thead>
+        <tbody>
+            <tr><td>5.1 Were the data analysed in accordance with a pre-specified plan finalized before unblinded outcome data were available?</td><td class="answer-code">PY</td><td>Trial registered (NCT03800134) with pre-specified primary endpoints. Interim analysis prespecified with alpha spending. Protocol amendments occurred (e.g., exclusion of EGFR/ALK patients), but analysis plan finalized before unblinding.</td><td>"ClinicalTrials.gov number, NCT03800134" and "The first interim analysis of event-free survival was scheduled to occur at approximately 30% maturity... To strongly control the two-sided type I error rate at 0.05, a hierarchical multiple testing procedure that included a gatekeeping strategy was used" (Statistical Analysis)</td><td>试验注册且预设主要结局。期中分析预先指定。尽管有方案修订，但分析计划在揭盲前确定。</td></tr>
+            <tr><td>5.2 Is the result likely to have been selected from multiple eligible outcome measurements?</td><td class="answer-code">N</td><td>Primary definition of EFS clearly stated. No indication of selective reporting from multiple measurements.</td><td>"Event-free survival was defined as the time from randomization to the earliest of: progressive disease that precludes surgery... or death from any cause." (End Points)</td><td>EFS的主要定义明确，无选择性报告证据。</td></tr>
+            <tr><td>5.3 Is the result likely to have been selected from multiple eligible analyses of the data?</td><td class="answer-code">N</td><td>Primary analysis pre-specified (stratified log-rank test). Sensitivity analyses reported and consistent.</td><td>"The log-rank test was used for the primary analysis of event-free survival, stratified by disease stage and PD-L1 expression." (Statistical Analysis)</td><td>主要分析预先指定（分层log-rank检验），敏感性分析已报告且结果一致。</td></tr>
+            <tr><td colspan="5"><strong>Note for 5.1:</strong> Trial registered and interim analysis pre-specified. Answer PY.<br><strong>Note for 5.2:</strong> No evidence of selective reporting. Answer N.<br><strong>Note for 5.3:</strong> No evidence of selective reporting. Answer N.</td></tr>
+        </tbody>
+    </table>
+
+    <!-- Domain-level and overall judgements -->
+    <h2>Risk of Bias Judgements</h2>
+    <table>
+        <thead><tr><th>Domain</th><th>Assessor's Judgement</th><th>General Note</th></tr></thead>
+        <tbody>
+            <tr><td>Domain 1: Randomization process</td><td>Some concerns</td><td>Random sequence generation probably adequate (PY), but allocation concealment probably not (PN) due to lack of explicit description. Baseline balance good, but lack of concealment raises some concerns.</td></tr>
+            <tr><td>Domain 2: Deviations from intended interventions</td><td>Low risk</td><td>Double-blind design (participants/carers unaware). Appropriate ITT analysis used. Deviations balanced and not due to trial context.</td></tr>
+            <tr><td>Domain 3: Missing outcome data</td><td>Low risk</td><td>Data available for all or nearly all participants; no exclusions.</td></tr>
+            <tr><td>Domain 4: Measurement of the outcome</td><td>Low risk</td><td>Blinded independent central review using standard criteria; no differential measurement.</td></tr>
+            <tr><td>Domain 5: Selection of the reported result</td><td>Some concerns</td><td>Protocol amendments (exclusion of EGFR/ALK patients) and hierarchical testing, but primary analysis pre-specified. Some concerns due to potential selective reporting from multiple analyses? However, overall low risk but conservative 'some concerns'.</td></tr>
+            <tr><td><strong>Overall (Domain 6)</strong></td><td><strong>Some concerns</strong></td><td>Some concerns in randomization (allocation concealment) and selection (protocol amendments). However, outcome is objective and assessed blindly, ITT analysis used. Overall judgement: Some concerns.</td></tr>
+        </tbody>
+    </table>
+    <footer>Assessment based on Heymach et al. N Engl J Med 2023;389:1672-84. Supplementary appendix reviewed. RoB 2 tool version (22 August 2019).</footer>
+</div>
+</body>
+</html>

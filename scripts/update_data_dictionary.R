@@ -1,26 +1,46 @@
 # ============================================================
 # update_data_dictionary.R
-# 用途：在 R 包开发过程中，根据 binary_data, survival, continuous
-#       三个 sheet 的实际列结构，自动生成/更新 data_dictionary sheet。
-# 运行前请确保工作目录为包根目录，且 clinical_studies_data.xlsx 存在。
+# 用途：根据实际 sheet 列结构自动生成/更新 data_dictionary sheet
+# 特别支持 rob2_results 双层标题（第一层为 column_group）
 # ============================================================
 
 library(openxlsx)
-library(dplyr)
 
-# 配置文件路径（请根据实际包结构调整）
 excel_file <- "inst/extdata/clinical_studies_data.xlsx"
 
-# 检查文件是否存在
 if (!file.exists(excel_file)) {
   stop("Excel file not found: ", excel_file,
        "\n请确认文件路径是否正确，或先运行其他脚本生成该文件。")
 }
 
-# 辅助函数：获取 sheet 的所有列名（不读取数据）
+# 辅助函数：获取 sheet 的所有列名，并可选获取第一行分组信息
+# 返回 list(col_names = 列名向量, col_groups = 分组向量，若无则为 NA)
+get_sheet_columns_with_groups <- function(file, sheet_name) {
+  if (!file.exists(file)) return(list(col_names = character(), col_groups = character()))
+  # 读取前两行
+  df_header <- tryCatch(
+    read.xlsx(file, sheet = sheet_name, rows = 1:2, colNames = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(df_header)) return(list(col_names = character(), col_groups = character()))
+
+  # 第二行为列名
+  col_names <- as.character(unlist(df_header[2, ]))
+  # 第一行为分组，如果第一行有 NA 或空字符串，则保持 NA
+  col_groups <- as.character(unlist(df_header[1, ]))
+  col_groups[is.na(col_groups) | col_groups == ""] <- NA_character_
+
+  # 过滤掉列名为空或 NA 的列
+  valid <- !is.na(col_names) & col_names != ""
+  col_names <- col_names[valid]
+  col_groups <- col_groups[valid]
+
+  list(col_names = col_names, col_groups = col_groups)
+}
+
+# 对于普通单层标题的 sheet，使用简单读取
 get_sheet_columns <- function(file, sheet_name) {
   if (!file.exists(file)) return(character())
-  # 只读取第一行来获取列名
   df <- tryCatch(
     read.xlsx(file, sheet = sheet_name, rows = 1, colNames = TRUE),
     error = function(e) NULL
@@ -29,134 +49,173 @@ get_sheet_columns <- function(file, sheet_name) {
   names(df)
 }
 
-# 定义三个数据 sheet
-data_sheets <- c("binary_data", "survival", "continuous")
-sheet_cols <- list()
+# 五个数据 sheet
+data_sheets <- c("binary_data", "survival", "continuous", "studies_info", "rob2_results")
+sheet_cols <- list()       # 存储列名
+sheet_groups <- list()     # 存储分组信息（仅 rob2_results 有值）
+
 for (sht in data_sheets) {
-  cols <- get_sheet_columns(excel_file, sht)
-  if (length(cols) > 0) {
-    sheet_cols[[sht]] <- cols
+  if (sht == "rob2_results") {
+    res <- get_sheet_columns_with_groups(excel_file, sht)
+    if (length(res$col_names) > 0) {
+      sheet_cols[[sht]] <- res$col_names
+      sheet_groups[[sht]] <- res$col_groups
+    } else {
+      sheet_cols[[sht]] <- character()
+      sheet_groups[[sht]] <- character()
+      warning(sht, " sheet 不存在或为空，将忽略。")
+    }
   } else {
-    sheet_cols[[sht]] <- character()
-    warning(sht, " sheet 不存在或为空，将忽略。")
+    cols <- get_sheet_columns(excel_file, sht)
+    if (length(cols) > 0) {
+      sheet_cols[[sht]] <- cols
+      sheet_groups[[sht]] <- rep(NA_character_, length(cols))  # 其他表分组为空
+    } else {
+      sheet_cols[[sht]] <- character()
+      sheet_groups[[sht]] <- character()
+      warning(sht, " sheet 不存在或为空，将忽略。")
+    }
   }
 }
 
-# 加载或创建 workbook
 wb <- loadWorkbook(excel_file)
 
-# 读取现有的 data_dictionary（如果存在）
+# 读取或创建 data_dictionary
 if ("data_dictionary" %in% names(wb)) {
   dict_df <- read.xlsx(excel_file, sheet = "data_dictionary")
   removeWorksheet(wb, "data_dictionary")
 } else {
   dict_df <- data.frame(
-    data_type = character(),
-    sheet_column = character(),
-    constraint_type = character(),
+    data_type        = character(),
+    sheet_column     = character(),
+    column_group     = character(),   # 新增列
+    constraint_type  = character(),
     constraint_value = character(),
-    is_critical = logical(),
-    example = character(),
-    notes = character(),
-    status = character(),
-    order = integer(),
+    is_critical      = logical(),
+    example          = character(),
+    notes            = character(),
+    status           = character(),
+    order            = integer(),
     stringsAsFactors = FALSE
   )
 }
 
-# 确保必要的列存在
-required_cols <- c("data_type", "sheet_column", "constraint_type", "constraint_value",
-                   "is_critical", "example", "notes", "status", "order")
+# 确保必需列存在
+required_cols <- c("data_type", "sheet_column", "column_group", "constraint_type",
+                   "constraint_value", "is_critical", "example", "notes", "status", "order")
 for (col in required_cols) {
   if (!col %in% names(dict_df)) {
     dict_df[[col]] <- NA_character_
   }
 }
-dict_df$is_critical <- as.logical(dict_df$is_critical)
-dict_df$order <- as.numeric(dict_df$order)
 
-# 对每个数据 sheet 同步列信息
+# 统一类型
+dict_df$data_type        <- as.character(dict_df$data_type)
+dict_df$sheet_column     <- as.character(dict_df$sheet_column)
+dict_df$column_group     <- as.character(dict_df$column_group)
+dict_df$constraint_type  <- as.character(dict_df$constraint_type)
+dict_df$constraint_value <- as.character(dict_df$constraint_value)
+dict_df$example          <- as.character(dict_df$example)
+dict_df$notes            <- as.character(dict_df$notes)
+dict_df$status           <- as.character(dict_df$status)
+dict_df$is_critical      <- as.logical(dict_df$is_critical)
+dict_df$order            <- as.numeric(dict_df$order)
+
+# 遍历每个数据 sheet 进行同步
 for (dtype in names(sheet_cols)) {
   cols <- sheet_cols[[dtype]]
-  existing_rows <- dict_df %>% filter(data_type == dtype)
-  existing_cols <- existing_rows$sheet_column
+  groups <- sheet_groups[[dtype]]   # 长度与 cols 相同
 
-  # 1) 添加新列
+  idx_existing <- which(dict_df$data_type == dtype)
+  existing_cols <- dict_df$sheet_column[idx_existing]
+
+  # 1) 添加新列（并填充 column_group）
   new_cols <- setdiff(cols, existing_cols)
   if (length(new_cols) > 0) {
-    # 获取当前该 dtype 的最大 order
-    max_order <- if (nrow(existing_rows) > 0) max(existing_rows$order, na.rm = TRUE) else 0
+    max_order <- if (length(idx_existing) > 0) {
+      max(dict_df$order[idx_existing], na.rm = TRUE)
+    } else 0
+
     for (i in seq_along(new_cols)) {
+      col_name <- new_cols[i]
+      # 找到该列在原 cols 中的位置，以获取对应的 group
+      pos <- match(col_name, cols)
+      group_val <- if (!is.na(pos)) groups[pos] else NA_character_
+
       new_row <- data.frame(
-        data_type = dtype,
-        sheet_column = new_cols[i],
-        constraint_type = "description",
+        data_type        = dtype,
+        sheet_column     = col_name,
+        column_group     = group_val,
+        constraint_type  = "description",
         constraint_value = "待补充描述",
-        is_critical = FALSE,
-        example = NA_character_,
-        notes = NA_character_,
-        status = "active",
-        order = max_order + i,
+        is_critical      = FALSE,
+        example          = NA_character_,
+        notes            = NA_character_,
+        status           = "active",
+        order            = max_order + i,
         stringsAsFactors = FALSE
       )
-      dict_df <- bind_rows(dict_df, new_row)
+      dict_df <- rbind(dict_df, new_row)
+    }
+    idx_existing <- which(dict_df$data_type == dtype)
+  }
+
+  # 2) 对于 rob2_results，可能需要更新已有列的 column_group（如果组名变化）
+  # 这里我们同步更新所有列的分组信息，以 Excel 中当前第一行为准
+  for (j in seq_along(cols)) {
+    col_name <- cols[j]
+    group_val <- groups[j]
+    idx <- which(dict_df$data_type == dtype & dict_df$sheet_column == col_name)
+    if (length(idx) > 0) {
+      dict_df$column_group[idx] <- group_val
     }
   }
 
-  # 2) 重新排 order，使其与数据 sheet 中的列顺序一致
-  # 获取该 dtype 的所有 active 行
-  active_rows <- dict_df %>% filter(data_type == dtype, status == "active")
-  if (nrow(active_rows) > 0) {
-    # 根据 cols 顺序生成新 order
-    active_rows$new_order <- match(active_rows$sheet_column, cols)
-    active_rows <- active_rows %>% filter(!is.na(new_order))
-    for (j in 1:nrow(active_rows)) {
-      dict_df <- dict_df %>%
-        mutate(order = ifelse(data_type == dtype & sheet_column == active_rows$sheet_column[j],
-                              active_rows$new_order[j], order))
+  # 3) 根据实际列顺序调整 order（仅对 active 状态）
+  idx_active <- which(dict_df$data_type == dtype & dict_df$status == "active")
+  if (length(idx_active) > 0) {
+    active_cols <- dict_df$sheet_column[idx_active]
+    new_order <- match(active_cols, cols)
+    valid <- !is.na(new_order)
+    if (any(valid)) {
+      dict_df$order[idx_active[valid]] <- new_order[valid]
     }
   }
 
-  # 3) 标记已删除的列
+  # 4) 标记已删除的列
   deleted_cols <- setdiff(existing_cols, cols)
   if (length(deleted_cols) > 0) {
-    dict_df <- dict_df %>%
-      mutate(status = ifelse(data_type == dtype & sheet_column %in% deleted_cols,
-                             "deleted", status))
+    idx_deleted <- which(dict_df$data_type == dtype &
+                           dict_df$sheet_column %in% deleted_cols)
+    dict_df$status[idx_deleted] <- "deleted"
   }
 }
 
-# 重新排序字典：先按 data_type，再按 order 升序
-dict_df <- dict_df %>%
-  arrange(data_type, order) %>%
-  select(data_type, sheet_column, constraint_type, constraint_value,
-         is_critical, example, notes, status, order)
+# 排序
+dict_df <- dict_df[order(dict_df$data_type, dict_df$order), ]
+dict_df <- dict_df[, required_cols]
 
-# 添加新的 data_dictionary sheet
+# 写回 Excel
 addWorksheet(wb, "data_dictionary")
 writeData(wb, "data_dictionary", dict_df, colNames = TRUE)
 
-# 设置表头样式（加粗）
+# 样式设置
 header_style <- createStyle(fontSize = 11, textDecoration = "bold")
 addStyle(wb, sheet = "data_dictionary", style = header_style, rows = 1,
          cols = 1:ncol(dict_df), gridExpand = TRUE)
 
-# 设置列宽
-setColWidths(wb, sheet = "data_dictionary",
-             cols = 1:ncol(dict_df),
-             widths = c(15, 20, 18, 30, 10, 20, 30, 12, 8))
+# 列宽（新增 column_group 列，适当调整宽度）
+setColWidths(wb, sheet = "data_dictionary", cols = 1:ncol(dict_df),
+             widths = c(15, 20, 18, 18, 30, 10, 20, 30, 12, 8))
 
-# 条件格式：对 status == "deleted" 的行应用灰色填充和灰色字体
 deleted_rows <- which(dict_df$status == "deleted")
 if (length(deleted_rows) > 0) {
   gray_fill <- createStyle(fgFill = "lightgray", fontColour = "gray50")
-  for (row in deleted_rows + 1) {  # +1 因为表头占第1行
+  for (row in deleted_rows + 1) {
     addStyle(wb, sheet = "data_dictionary", style = gray_fill,
              rows = row, cols = 1:ncol(dict_df), gridExpand = TRUE)
   }
 }
 
-# 保存文件
 saveWorkbook(wb, excel_file, overwrite = TRUE)
-
 message("data_dictionary 已成功更新！文件位置：", excel_file)

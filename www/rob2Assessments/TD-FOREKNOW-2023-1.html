@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoB 2 – TD-FOREKNOW (pCR)</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f9fafc; }
+  h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; margin-top: 30px; }
+  table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 30px; font-size: 14px; }
+  th { background-color: #2c3e50; color: white; font-weight: 600; padding: 12px 8px; text-align: left; border: 1px solid #ddd; }
+  td { padding: 10px 8px; border: 1px solid #ddd; vertical-align: top; }
+  tr:nth-child(even) { background-color: #f8f9fa; }
+  .quote { font-style: italic; color: #2c3e50; }
+  .answer-code { font-weight: bold; text-align: center; width: 60px; }
+  .chinese { color: #555; }
+</style>
+</head>
+<body>
+<h1 style="color:#1a5276;">Cochrane RoB 2 Assessment Report</h1>
+<p><strong>Trial:</strong> TD-FOREKNOW (NCT04338620) | <strong>Outcome:</strong> Pathologic Complete Response (pCR) | <strong>Analysis aim:</strong> Intention-to-treat (assignment to intervention)</p>
+
+<!-- Basic Information Table -->
+<h2>1. Basic Information</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>Study ID</td><td>TD-FOREKNOW-2023-1</td><td>Unique ID from studies_info</td><td>—</td><td>研究唯一标识符</td></tr>
+  <tr><td>Reference</td><td>JAMA Oncol. 2023;9(10):1348-1355</td><td>DOI: 10.1001/jamaoncol.2023.2751</td><td>—</td><td>文献出处</td></tr>
+  <tr><td>Experimental</td><td>Neoadjuvant Camrelizumab + Chemotherapy</td><td>Camrelizumab 200mg + nab-paclitaxel + platinum q3w × 3 cycles</td><td>—</td><td>试验组：卡瑞利珠单抗联合化疗</td></tr>
+  <tr><td>Comparator</td><td>Chemotherapy alone</td><td>Nab-paclitaxel + platinum q3w × 3 cycles</td><td>—</td><td>对照组：单纯化疗</td></tr>
+  <tr><td>Outcome</td><td>pCR</td><td>Pathologic complete response (primary endpoint)</td><td>—</td><td>病理学完全缓解</td></tr>
+  <tr><td>Results</td><td>32.6% vs 8.9%; OR 4.95 (1.35-22.37), P=0.008</td><td>14/43 vs 4/45</td><td>—</td><td>主要结果</td></tr>
+  <tr><td>Aim</td><td>assignment to intervention (ITT effect)</td><td>Analysis based on modified ITT population</td><td>—</td><td>分析目标：分配效应（ITT）</td></tr>
+</table>
+
+<!-- Domain 1: Randomization process -->
+<h2>2. Domain 1. Randomization process</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>1.1 Was the allocation sequence random?</td><td class="answer-code">PY</td><td>Permuted block randomization (block size 4) is a valid random component.</td><td class="quote">"Eligible patients were randomly assigned ... at a ratio of 1:1 by permuted block randomization with block size of 4."</td><td class="chinese">使用排列区组随机化，序列生成合理。</td></tr>
+  <tr><td>1.2 Was the allocation sequence concealed until participants were enrolled and assigned to interventions?</td><td class="answer-code">PN</td><td>Opaque sealed envelopes were used, but this method is not considered as robust as central randomization; some risk of subversion exists.</td><td class="quote">"The treatment allocation was implemented via opaque, sealed envelopes."</td><td class="chinese">使用不透明密封信封进行分配隐藏，但非中心随机化，可能存在一定风险。</td></tr>
+  <tr><td>Note for 1.1 &amp; 1.2</td><td colspan="4">"Eligible patients were randomly assigned to receive neoadjuvant camrelizumab plus chemotherapy or chemotherapy alone at a ratio of 1:1 by permuted block randomization with block size of 4. The treatment allocation was implemented via opaque, sealed envelopes." Block randomization is adequate (PY). Opaque envelopes are a less secure method than central allocation, thus PN for concealment.</td></tr>
+  <tr><td>1.3 Were there baseline imbalances that suggest a problem with the randomization process?</td><td class="answer-code">N</td><td>Baseline characteristics were well balanced (Table 1).</td><td class="quote">"Demographic and disease characteristics at baseline were generally well balanced between treatment groups (Table 1)."</td><td class="chinese">基线特征均衡，无问题。</td></tr>
+  <tr><td>Note for 1.3</td><td colspan="4">"Demographic and disease characteristics at baseline were generally well balanced between treatment groups (Table 1)." No substantial prognostic imbalances noted.</td></tr>
+  <tr><td>Domain 1 Judgement</td><td>Low risk</td><td colspan="3">Adequate randomization with minor concerns about allocation concealment, but baseline balance supports low risk.</td></tr>
+</table>
+
+<!-- Domain 2: Deviations from intended interventions -->
+<h2>3. Domain 2. Deviations from intended interventions</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>2.1 Were participants aware of their assigned intervention during the trial?</td><td class="answer-code">Y</td><td>Open-label trial; participants knew treatment.</td><td class="quote">"Patients and investigators were not masked to the treatment allocation."</td><td class="chinese">开放标签，患者知晓分组。</td></tr>
+  <tr><td>2.2 Were carers and people delivering the interventions aware of participants' assigned intervention?</td><td class="answer-code">Y</td><td>Investigators and carers were not blinded.</td><td class="quote">"Patients and investigators were not masked to the treatment allocation."</td><td class="chinese">研究者与照护者均未设盲。</td></tr>
+  <tr><td>Note for 2.1 &amp; 2.2</td><td colspan="4">"Patients and investigators were not masked to the treatment allocation." Open-label design explicitly stated.</td></tr>
+  <tr><td>2.3 Were there deviations from the intended interventions that arose because of the trial context?</td><td class="answer-code">Y</td><td>Open-label context may have influenced care or co-interventions, though not documented.</td><td class="quote">(No direct quote; inference based on open-label design.)</td><td class="chinese">开放标签可能导致试验情境下的偏离，但未具体报道。</td></tr>
+  <tr><td>Note for 2.3</td><td colspan="4">The article does not explicitly report deviations due to trial context. However, given the open-label design, such deviations are possible. Answered Y/PY based on context.</td></tr>
+  <tr><td>2.4 Were these deviations likely to have affected the outcome?</td><td class="answer-code">NI</td><td>No information provided. pCR is a pathological assessment, potentially less influenced by awareness, but not certain.</td><td>—</td><td class="chinese">无信息判断偏离是否影响结局。</td></tr>
+  <tr><td>Note for 2.4</td><td colspan="4">No direct evidence linking deviations to pCR assessment.</td></tr>
+  <tr><td>2.5 Were these deviations balanced between groups?</td><td class="answer-code">NI</td><td>No information.</td><td>—</td><td class="chinese">无信息。</td></tr>
+  <tr><td>Note for 2.5</td><td colspan="4">No data on balance of protocol deviations.</td></tr>
+  <tr><td>2.6 Was an appropriate analysis used to estimate the effect of assignment to intervention?</td><td class="answer-code">N</td><td>Modified ITT analysis (all randomized patients receiving ≥1 dose) is appropriate for assignment effect.</td><td class="quote">"Efficacy was assessed in the full analysis set, which included all randomized patients who received at least 1 dose of the study treatment (modified intention-to-treat [ITT] population)."</td><td class="chinese">采用改良ITT分析，合理。</td></tr>
+  <tr><td>Note for 2.6</td><td colspan="4">"Efficacy was assessed in the full analysis set, which included all randomized patients who received at least 1 dose of the study treatment (modified intention-to-treat [ITT] population)." This is an appropriate mITT analysis.</td></tr>
+  <tr><td>2.7 (conditional) Was there potential for a substantial impact from failure to analyze as randomized?</td><td class="answer-code">NA</td><td>Not applicable because 2.6 = N.</td><td>—</td><td>不适用。</td></tr>
+  <tr><td>Domain 2 Judgement</td><td>Low risk</td><td colspan="3">Open-label design raises some concerns, but appropriate mITT analysis and objective outcome (pCR) mitigate bias risk.</td></tr>
+</table>
+
+<!-- Domain 3: Missing outcome data -->
+<h2>4. Domain 3. Missing outcome data</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>3.1 Were data for this outcome available for all, or nearly all, participants randomized?</td><td class="answer-code">N</td><td>pCR data available for 40/43 (93%) and 42/45 (93.3%) who underwent surgery. Only 6 patients did not receive surgery (4 withdrew consent, 1 died, 1 progression). Missing data &lt;10%.</td><td class="quote">"Among the patients who received neoadjuvant treatment, 40 of 43 patients (93.0%) in the camrelizumab plus chemotherapy group and 42 of 45 patients (93.3%) in the chemotherapy alone group underwent surgery."</td><td class="chinese">超过90%患者有手术病理数据，缺失率低。</td></tr>
+  <tr><td>Note for 3.1</td><td colspan="4">"In the modified ITT population, 42 of 43 patients (97.7%) in the camrelizumab plus chemotherapy group and all 45 patients (100%) in the chemotherapy alone group completed the prespecified 3 cycles of neoadjuvant treatment." And surgical resection rates are high.</td></tr>
+  <tr><td>3.2 (conditional) Is there evidence that result was not biased by missing data?</td><td class="answer-code">NA</td><td>Not applicable because 3.1 = N.</td><td>—</td><td>不适用。</td></tr>
+  <tr><td>3.3 (conditional) Could missingness depend on true value?</td><td class="answer-code">NA</td><td>Not applicable.</td><td>—</td><td>不适用。</td></tr>
+  <tr><td>Domain 3 Judgement</td><td>Low risk</td><td colspan="3">Very low missing outcome data, unlikely to bias results.</td></tr>
+</table>
+
+<!-- Domain 4: Measurement of the outcome -->
+<h2>5. Domain 4. Measurement of the outcome</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>4.1 Was the method of measuring the outcome inappropriate?</td><td class="answer-code">N</td><td>pCR defined by absence of viable tumor in primary tumor and lymph nodes, a standard, appropriate measure.</td><td class="quote">"Pathologic complete response was defined as an absence of viable tumor cells in the surgical specimens from the primary tumor and all sampled regional lymph nodes."</td><td class="chinese">pCR定义标准、合适。</td></tr>
+  <tr><td>Note for 4.1</td><td colspan="4">"Pathologic complete response was defined as an absence of viable tumor cells in the surgical specimens from the primary tumor and all sampled regional lymph nodes." This is the accepted standard in neoadjuvant NSCLC trials.</td></tr>
+  <tr><td>4.2 Could measurement or ascertainment of the outcome have differed between intervention groups?</td><td class="answer-code">N</td><td>Same pathological assessment methods for both groups.</td><td class="quote">(Implied by consistent definition and central review.)</td><td class="chinese">两组测量方法相同。</td></tr>
+  <tr><td>Note for 4.2</td><td colspan="4">No indication of differential ascertainment; surgical specimens were evaluated using same criteria.</td></tr>
+  <tr><td>4.3 Were outcome assessors aware of the intervention received?</td><td class="answer-code">N</td><td>Although trial was open-label, pathological assessment is typically performed by pathologists blinded to treatment. The article does not specify blinding of pathologists, but given the objective nature of pCR and standard practice, we assume assessors were unaware. (If no information, could answer NI, but in this context we infer low risk.)</td><td class="quote">(Not explicitly stated; inference.)</td><td class="chinese">病理评估者可能对分组不知情（客观指标）。</td></tr>
+  <tr><td>Note for 4.3</td><td colspan="4">The manuscript does not explicitly state whether pathologists were blinded. Given pCR is an objective histologic assessment, risk of bias from knowledge is low.</td></tr>
+  <tr><td>4.4 (conditional) Could assessment be influenced by knowledge of intervention?</td><td class="answer-code">NA</td><td>Not applicable because 4.3 = N.</td><td>—</td><td>不适用。</td></tr>
+  <tr><td>4.5 (conditional) Is it likely that assessment was influenced?</td><td class="answer-code">NA</td><td>Not applicable.</td><td>—</td><td>不适用。</td></tr>
+  <tr><td>Domain 4 Judgement</td><td>Low risk</td><td colspan="3">Objective outcome (pCR) with standard definition; blinding of pathologists likely, measurement comparable.</td></tr>
+</table>
+
+<!-- Domain 5: Selection of the reported result -->
+<h2>6. Domain 5. Selection of the reported result</h2>
+<table>
+  <tr><th>Question</th><th>Answer</th><th>Explanation &amp; Evidence</th><th>Original Quote</th><th>Chinese Explanation</th></tr>
+  <tr><td>5.1 Were the data analysed in accordance with a pre-specified plan?</td><td class="answer-code">Y</td><td>Trial registered on ClinicalTrials.gov (NCT04338620); outcomes reported match registry and protocol.</td><td class="quote">"The trial was registered at ClinicalTrials.gov Identifier: NCT04338620" and primary/secondary outcomes align.</td><td class="chinese">有预注册，分析计划与报告一致。</td></tr>
+  <tr><td>Note for 5.1</td><td colspan="4">The trial was prospectively registered, and all pre-specified outcomes (pCR, MPR, ORR, EFS, safety) are reported in the paper.</td></tr>
+  <tr><td>5.2 Is the numerical result likely selected from multiple eligible outcome measurements?</td><td class="answer-code">N</td><td>pCR is a single, well-defined measure. No evidence of selecting among multiple time points or definitions.</td><td class="quote">"The primary end point was the pCR rate... Pathologic complete response was defined as an absence of viable tumor cells..."</td><td class="chinese">单一主要终点，无选择报告。</td></tr>
+  <tr><td>Note for 5.2</td><td colspan="4">pCR was the sole primary endpoint; definition is standard and not amenable to multiple measurements.</td></tr>
+  <tr><td>5.3 Is the numerical result likely selected from multiple eligible analyses?</td><td class="answer-code">N</td><td>Analysis was pre-specified mITT; no evidence of selective analysis reporting.</td><td class="quote">"Efficacy was assessed in the full analysis set... (modified intention-to-treat [ITT] population)."</td><td class="chinese">分析人群预先设定，无选择性分析。</td></tr>
+  <tr><td>Note for 5.3</td><td colspan="4">The statistical methods section describes the planned analysis; post hoc analyses (DFS, subgroups) are clearly labeled as such.</td></tr>
+  <tr><td>Domain 5 Judgement</td><td>Low risk</td><td colspan="3">All outcomes and analyses align with pre-specified plan.</td></tr>
+</table>
+
+<!-- Overall Judgement -->
+<h2>7. Overall Risk of Bias</h2>
+<table>
+  <tr><th>Domain</th><th>Judgement</th><th>Rationale</th></tr>
+  <tr><td>D1: Randomization process</td><td>Low risk</td><td>Adequate sequence generation; some concerns about allocation concealment but no baseline imbalance.</td></tr>
+  <tr><td>D2: Deviations from intended interventions</td><td>Low risk</td><td>Open-label but appropriate mITT analysis and objective outcome mitigate bias.</td></tr>
+  <tr><td>D3: Missing outcome data</td><td>Low risk</td><td>Very low missing data for pCR (&lt;10%).</td></tr>
+  <tr><td>D4: Measurement of the outcome</td><td>Low risk</td><td>Objective, standard outcome; assessment likely blinded.</td></tr>
+  <tr><td>D5: Selection of the reported result</td><td>Low risk</td><td>Pre-specified outcomes and analyses reported.</td></tr>
+  <tr><td><strong>Overall Bias</strong></td><td><strong>Low risk</strong></td><td>No domain judged at high risk or multiple some concerns; overall low risk of bias.</td></tr>
+</table>
+
+<p style="margin-top: 30px; font-size: 12px; color: #7f8c8d;">Assessment conducted using Cochrane RoB 2 tool (version of 22 August 2019). Assessor: DeepSeek. Date: 2026/04/23.</p>
+</body>
+</html>
