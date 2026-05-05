@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoB 2 评估 – IMpower010</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h2 {
+            background-color: #2c3e50;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th {
+            background-color: #34495e;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            vertical-align: top;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .judgement-low {
+            background-color: #d4edda;
+            color: #155724;
+            font-weight: bold;
+        }
+        .judgement-some {
+            background-color: #fff3cd;
+            color: #856404;
+            font-weight: bold;
+        }
+        .judgement-high {
+            background-color: #f8d7da;
+            color: #721c24;
+            font-weight: bold;
+        }
+        .note {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .quote {
+            font-style: italic;
+            background-color: #fef9e6;
+            padding: 2px 4px;
+            border-left: 3px solid #f0ad4e;
+        }
+    </style>
+</head>
+<body>
+    <h1>RoB 2 偏倚风险评估 – IMpower010 (Atezolizumab 辅助治疗 NSCLC)</h1>
+    <p><strong>评估者：</strong> DeepSeek | <strong>日期：</strong> 2026-05-03 | <strong>唯一ID：</strong> IMpower010-2021-1</p>
+    <p><strong>参考文献：</strong> Felip et al. Lancet 2021; 398: 1344–57. DOI: 10.1016/S0140-6736(21)02098-5</p>
+    <p><strong>结局：</strong> 研究者评估的无病生存期 (DFS) | <strong>结果：</strong> HR 0.66 (95% CI 0.50-0.88) 针对II-IIIA期且PD-L1≥1%人群</p>
+
+    <!-- ================= 基本信息表 ================= -->
+    <h2>基本信息</h2>
+    <table>
+        <thead>
+            <tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>试验唯一ID</td><td>IMpower010-2021-1</td><td>来自 studies_info</td><td>-</td><td>试验唯一标识符</td></tr>
+            <tr><td>研究名称</td><td>IMpower010</td><td>来自 studies_info</td><td>-</td><td>试验名称</td></tr>
+            <tr><td>试验组</td><td>AdjuvantChemoIOAtezolizumab</td><td>辅助化疗后阿替利珠单抗</td><td>-</td><td>实验组：含铂辅助化疗 + 阿替利珠单抗</td></tr>
+            <tr><td>对照组</td><td>AdjuvantChemotherapy</td><td>单纯辅助化疗后最佳支持治疗</td><td>-</td><td>对照组：辅助化疗后仅最佳支持治疗</td></tr>
+            <tr><td>分析目标 (Aim)</td><td>assignment to intervention (intention-to-treat effect)</td><td>主要分析采用ITT原则</td><td>"The primary endpoint... was tested hierarchically in the ITT population"</td><td>评估分配至干预的效应（ITT效应）</td></tr>
+            <tr><td>数据来源</td><td>Journal article(s)</td><td>完整发表于Lancet</td><td>-</td><td>期刊文章</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ================= Domain 1 ================= -->
+    <h2>Domain 1. 随机化过程</h2>
+    <table>
+        <thead><tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr></thead>
+        <tbody>
+            <tr><td>1.1 随机序列生成是否恰当？</td><td>Y</td><td>采用随机区组法（区组大小4）生成随机序列</td><td>"Patients were randomly assigned (1:1) by a permuted-block method (block size of four)"</td><td>使用的是随机区组法，序列生成恰当</td></tr>
+            <tr><td>1.2 分配隐藏是否适当？</td><td>Y</td><td>使用交互式语音网络应答系统进行中央随机化，保证分配隐藏</td><td>"with an interactive voice-web response system"</td><td>中央随机系统确保了分配隐藏</td></tr>
+            <tr><td>1.3 基线特征是否存在不平衡？</td><td>N</td><td>表1显示各治疗组基线特征总体平衡</td><td>"Baseline characteristics were generally balanced between treatment groups (Table 1)"</td><td>基线无显著不平衡，差异在随机误差范围内</td></tr>
+            <tr><td><strong>领域1总体判断</strong></td><td class="judgement-low">Low risk</td><td>随机方法和分配隐藏充分，基线平衡</td><td>-</td><td>低偏倚风险</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ================= Domain 2 ================= -->
+    <h2>Domain 2. 偏离预期干预</h2>
+    <table>
+        <thead><tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr></thead>
+        <tbody>
+            <tr><td>2.1 参与者是否知晓所分配干预？</td><td>Y</td><td>开放标签设计，参与者明确知晓分组</td><td>"randomised, multicentre, open-label, phase 3 study"</td><td>开放标签，参与者知晓干预</td></tr>
+            <tr><td>2.2 照护者/干预实施者是否知晓分配？</td><td>Y</td><td>同样因开放标签，医护人员知晓分组</td><td>同上</td><td>照护者知晓分组</td></tr>
+            <tr><td>2.3 是否有因试验情境导致的偏离？</td><td>N</td><td>虽有停药（如不良事件），但属于常规临床情况，非试验情境所致</td><td>"Adverse events leading to atezolizumab discontinuation occurred in 90 (18%) of 495 patients"</td><td>偏离（停药）为预期内，非试验情境引起</td></tr>
+            <tr><td>2.4 此类偏离是否可能影响结局？</td><td>NA</td><td>因2.3回答N，此问题不适用</td><td>-</td><td>不适用</td></tr>
+            <tr><td>2.5 偏离是否在组间平衡？</td><td>NA</td><td>不适用</td><td>-</td><td>不适用</td></tr>
+            <tr><td>2.6 分析是否恰当（用于估计分配干预效应）？</td><td>Y</td><td>采用ITT分析，分层Cox回归，符合标准</td><td>"The primary endpoint... was tested hierarchically... HRs for disease-free survival were estimated by a Cox regression model, including two-sided 95% CIs. Treatment comparisons were based on the stratified log-rank test."</td><td>ITT分析和分层Cox模型恰当</td></tr>
+            <tr><td>2.7 不恰当分析是否可能导致结果明显偏倚？</td><td>NA</td><td>2.6回答Y，本问题不适用</td><td>-</td><td>不适用</td></tr>
+            <tr><td><strong>领域2总体判断</strong></td><td class="judgement-some">Some concerns</td><td>开放标签可能导致性能偏倚，但ITT分析恰当，偏离不影响主要结果</td><td>-</td><td>有一定偏倚风险（开放标签）</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ================= Domain 3 ================= -->
+    <h2>Domain 3. 缺失结局数据</h2>
+    <table>
+        <thead><tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr></thead>
+        <tbody>
+            <tr><td>3.1 所有或几乎所有随机化参与者的结局数据是否可得？</td><td>Y</td><td>所有随机化患者均纳入ITT分析，无因缺失数据排除</td><td>"1005 patients with stage IB–IIIA NSCLC were randomly assigned and included in the ITT population"</td><td>所有随机化患者均纳入分析，无缺失结局数据</td></tr>
+            <tr><td>3.2 是否有证据表明缺失数据未导致偏倚？</td><td>NA</td><td>因3.1回答Y，此问题不适用</td><td>-</td><td>不适用</td></tr>
+            <tr><td>3.3 缺失是否可能依赖于其真实值？</td><td>NA</td><td>不适用</td><td>-</td><td>不适用</td></tr>
+            <tr><td><strong>领域3总体判断</strong></td><td class="judgement-low">Low risk</td><td>结局数据完整，ITT分析避免了缺失数据偏倚</td><td>-</td><td>低偏倚风险</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ================= Domain 4 ================= -->
+    <h2>Domain 4. 结局测量</h2>
+    <table>
+        <thead><tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr></thead>
+        <tbody>
+            <tr><td>4.1 结局测量方法是否不恰当？</td><td>N</td><td>使用CT、X线等标准影像学方法评估DFS，方法适当</td><td>"Tumours were assessed with CT of the chest and upper abdomen in all patients at baseline, and every 4 months... alternating chest CT and x-ray every 6 months during years 3–5"</td><td>测量方法标准恰当</td></tr>
+            <tr><td>4.2 结局测量或确定是否可能在不同组间有差异？</td><td>N</td><td>两组采用完全相同的影像学方案和频率</td><td>同上</td><td>各组测量方法一致</td></tr>
+            <tr><td>4.3 结局评估者是否知晓干预分配？</td><td>Y</td><td>开放标签试验，研究者评估终点，已知晓分组</td><td>"open-label" and "investigator-assessed disease-free survival"</td><td>评估者知晓分组</td></tr>
+            <tr><td>4.4 知晓分配是否可能影响结局评估？</td><td>PY</td><td>DFS依赖影像判读，存在主观成分，受知晓分组影响可能</td><td>同上</td><td>可能影响（很可能存在）</td></tr>
+            <tr><td>4.5 实际是否很可能被影响？</td><td>PY</td><td>开放标签下研究者倾向性可能轻微影响复发判断</td><td>同上</td><td>很可能有实际影响</td></tr>
+            <tr><td><strong>领域4总体判断</strong></td><td class="judgement-some">Some concerns</td><td>虽测量方法一致，但开放标签+主观结局导致高偏倚可能</td><td>-</td><td>有一定偏倚风险（测量偏倚）</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ================= Domain 5 ================= -->
+    <h2>Domain 5. 选择性报告结果</h2>
+    <table>
+        <thead><tr><th>问题 (Question)</th><th>答案 (Answer)</th><th>解释与证据 (Explanation & Evidence)</th><th>原文引用 (Original Quote)</th><th>中文解释 (Chinese Explanation)</th></tr></thead>
+        <tbody>
+            <tr><td>5.1 是否按照预先制订的分析计划进行分析？</td><td>PN</td><td>随机化后、揭盲前修改了PD-L1亚组定义（从SP142改为SP263），存在选择性报告风险</td><td>"On Feb 11, 2020, almost 1 year before this interim analysis was done and after all patients had been randomly assigned, the PD-L1 subpopulation to be analysed for disease-free survival was amended to patients whose tumours expressed PD-L1 on 1% or more of tumour cells as defined by the SP263 assay."</td><td>随机化后修改分析计划，可能不是完全前瞻性</td></tr>
+            <tr><td>5.2 是否存在多个结局测量中基于结果选择报告？</td><td>N</td><td>DFS定义单一（复发/新发NSCLC/死亡），无多重测量</td><td>"Disease-free survival was defined as the time from randomisation to the date of first NSCLC recurrence, occurrence of new primary NSCLC, or death from any cause."</td><td>结局域定义唯一</td></tr>
+            <tr><td>5.3 是否存在多个数据分析中基于结果选择报告？</td><td>N</td><td>主要分析为预先指定的分层Cox模型，虽有多样探索性分析，但主要报告结果遵循计划</td><td>"The primary endpoint... was tested hierarchically... HRs for disease-free survival were estimated by a Cox regression model, including two-sided 95% CIs."</td><td>主要分析预先指定，未基于结果选择</td></tr>
+            <tr><td><strong>领域5总体判断</strong></td><td class="judgement-some">Some concerns</td><td>分析计划修订带来不确定性，但未发现明确的选择性报告</td><td>-</td><td>有一定偏倚风险（分析计划事后修改）</td></tr>
+        </tbody>
+    </table>
+
+    <!-- 整体判断 -->
+    <h2>整体偏倚风险 (Overall Bias)</h2>
+    <table>
+        <thead><tr><th>领域</th><th>判断</th><th>说明</th></tr></thead>
+        <tbody>
+            <tr><td>随机化过程</td><td class="judgement-low">低风险</td><td>随机方法和分配隐藏充分</td></tr>
+            <tr><td>偏离预期干预</td><td class="judgement-some">一定风险</td><td>开放标签可能引入性能偏倚，但ITT分析恰当</td></tr>
+            <tr><td>缺失结局数据</td><td class="judgement-low">低风险</td><td>数据完整</td></tr>
+            <tr><td>结局测量</td><td class="judgement-some">一定风险</td><td>开放标签下研究者评估的DFS有主观性</td></tr>
+            <tr><td>选择性报告</td><td class="judgement-some">一定风险</td><td>分析计划事后修改亚组定义</td></tr>
+            <tr><td><strong>整体判断</strong></td><td class="judgement-some"><strong>Some concerns</strong></td><td>多个领域存在一定偏倚风险，但未达到高风险水平；结果应谨慎解读</td></tr>
+        </tbody>
+    </table>
+</body>
+</html>

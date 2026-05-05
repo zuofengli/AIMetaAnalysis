@@ -1,0 +1,286 @@
+# modules/synthetic_module.R
+library(shiny)
+library(dplyr)
+library(shinyjs)
+
+syntheticUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    actionButton(ns("synthetic_btn"), "合成数据 *", icon = icon("plus-circle"), width = "100%")
+  )
+}
+
+syntheticServer <- function(id,
+                            available_levels,           # reactive: 原始亚组水平
+                            data_type,                  # reactive: "binary" 或 "survival"
+                            base_data,                  # reactive: 原始数据（不含合成）
+                            selected_order_reactive,    # reactiveVal: 亚组顺序
+                            synthetic_data_reactive     # reactiveVal: 已存储的合成数据
+) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    # 定义空合成数据模板（包含所有必要列）
+    empty_synth_template <- data.frame(
+      unique_id = character(),
+      study_display = character(),
+      te = numeric(),
+      se_te = numeric(),
+      n1 = numeric(),
+      n2 = numeric(),
+      subgroup_level = character(),
+      stringsAsFactors = FALSE
+    )
+
+    # 用于存储待确认的合成参数
+    pending_synth <- reactiveVal(NULL)
+
+    # 控制按钮启用/禁用
+    observe({
+      req(available_levels())
+      if (length(available_levels()) == 0) {
+        shinyjs::disable("synthetic_btn")
+      } else {
+        shinyjs::enable("synthetic_btn")
+      }
+    })
+
+    # 弹出合成模态框
+    observeEvent(input$synthetic_btn, {
+      req(available_levels())
+      showModal(
+        modalDialog(
+          title = "合成新的亚组水平",
+          fluidRow(
+            column(6,
+                   selectInput(ns("synth_levels"), "选择要合并的水平（可多选）",
+                               choices = available_levels(),
+                               multiple = TRUE, size = 8, selectize = FALSE)
+            ),
+            column(6,
+                   radioButtons(ns("synth_method"), "合并方法",
+                                choices = c("逆方差加权法" = "invvar",
+                                            "Mantel-Haenszel 法" = "mh"),
+                                selected = "invvar"),
+                   selectizeInput(ns("synth_name"), "新水平名称",
+                                  choices = available_levels(),
+                                  selected = "Combined",
+                                  options = list(create = TRUE, placeholder = "请选择或输入新名称")),
+                   helpText("注意：生存数据仅支持逆方差加权法。如果选择已存在的名称，将追加数据（不会覆盖原有数据）。")
+            )
+          ),
+          footer = tagList(
+            modalButton("取消"),
+            actionButton(ns("confirm_synth"), "确认合成", class = "btn-primary")
+          ),
+          easyClose = FALSE
+        )
+      )
+    })
+
+    # 逆方差加权合并函数（生存数据）
+    combine_survival_invvar <- function(df_levels) {
+      w <- 1 / (df_levels$se_te^2)
+      te_comb <- sum(w * df_levels$te) / sum(w)
+      se_comb <- sqrt(1 / sum(w))
+      data.frame(te = te_comb, se_te = se_comb,
+                 n1 = NA_real_, n2 = NA_real_,
+                 stringsAsFactors = FALSE)
+    }
+
+    # 执行合成的主函数（仅支持逆方差加权）
+    perform_synthesis <- function(selected_levels, new_name, method = "invvar") {
+      base_df <- base_data()
+
+      # ========== 调试输出 ==========
+      cat("=== 调试信息：合成前 base_df 检查 ===\n")
+      if (is.null(base_df)) {
+        cat("base_df 为 NULL\n")
+      } else {
+        cat("base_df 行数:", nrow(base_df), "\n")
+        cat("base_df 列名:", paste(colnames(base_df), collapse = ", "), "\n")
+        cat("是否存在 'subgroup_level' 列:", "subgroup_level" %in% colnames(base_df), "\n")
+        if ("subgroup_level" %in% colnames(base_df)) {
+          cat("subgroup_level 的唯一值:", paste(unique(base_df$subgroup_level), collapse = ", "), "\n")
+        }
+        cat("selected_levels:", paste(selected_levels, collapse = ", "), "\n")
+        cat("new_name:", new_name, "\n")
+      }
+      cat("================================\n")
+
+      # ---------- 防御性检查 ----------
+      if (is.null(base_df) || nrow(base_df) == 0) {
+        showNotification("基础数据为空，无法进行合成。", type = "error")
+        return()
+      }
+      if (!"subgroup_level" %in% names(base_df)) {
+        showNotification("当前数据不支持亚组合成（缺少 subgroup_level 列）", type = "error")
+        return()
+      }
+
+      # 获取合成数据，若为 NULL 则使用空模板
+      synth_data <- synthetic_data_reactive()
+      if (is.null(synth_data)) {
+        synth_data <- empty_synth_template
+      }
+      if (nrow(synth_data) == 0) {
+        synth_data <- empty_synth_template
+      }
+
+      # 筛选要合并的水平数据
+      raw_data_to_be_transformed <- base_df[base_df$subgroup_level %in% selected_levels, , drop = FALSE]
+      if (nrow(raw_data_to_be_transformed) == 0) {
+        showNotification("所选水平下没有可用数据。", type = "warning")
+        return()
+      }
+
+      # 合并（逆方差加权）
+      merged_by_study <- raw_data_to_be_transformed %>%
+        dplyr::group_by(unique_id, study_display) %>%
+        dplyr::group_modify(~ combine_survival_invvar(.x)) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(subgroup_level = new_name)
+
+      if (nrow(merged_by_study) == 0) {
+        showNotification("合并失败，请检查数据。", type = "error")
+        return()
+      }
+
+      # 处理已存在的同名水平（追加合并）
+      existing_original <- new_name %in% available_levels()
+      existing_synth <- new_name %in% synth_data$subgroup_level
+
+      existing_data <- data.frame()
+
+      # 1. 处理原始数据中的同名水平
+      if (existing_original) {
+        existing_raw <- tryCatch({
+          idx <- which(base_df$subgroup_level == new_name)
+          if (length(idx) > 0) {
+            df <- base_df[idx, c("unique_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
+            df$source <- "raw"
+            df
+          } else {
+            data.frame()
+          }
+        }, error = function(e) {
+          cat("错误：在获取原始水平数据时出错：", e$message, "\n")
+          data.frame()
+        })
+        if (nrow(existing_raw) > 0) {
+          existing_data <- dplyr::bind_rows(existing_data, existing_raw)
+        }
+      }
+
+      # 2. 处理合成数据中的同名水平
+      if (existing_synth && nrow(synth_data) > 0 && "subgroup_level" %in% colnames(synth_data)) {
+        existing_synth_df <- tryCatch({
+          idx <- which(synth_data$subgroup_level == new_name)
+          if (length(idx) > 0) {
+            df <- synth_data[idx, c("unique_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
+            df$source <- "synth"
+            df
+          } else {
+            data.frame()
+          }
+        }, error = function(e) {
+          cat("错误：在获取合成水平数据时出错：", e$message, "\n")
+          data.frame()
+        })
+        if (nrow(existing_synth_df) > 0) {
+          existing_data <- dplyr::bind_rows(existing_data, existing_synth_df)
+        }
+      }
+
+      # 对已有数据进行去重（每个 unique_id 只保留一条，优先保留合成数据）
+      if (nrow(existing_data) > 0) {
+        existing_data <- existing_data %>%
+          dplyr::group_by(unique_id) %>%
+          dplyr::arrange(desc(source == "synth")) %>%
+          dplyr::slice(1) %>%
+          dplyr::ungroup() %>%
+          dplyr::select(-source)
+      }
+
+      # 排除已存在的 unique_id
+      if (nrow(existing_data) > 0) {
+        merged_by_study <- merged_by_study %>%
+          dplyr::anti_join(existing_data, by = "unique_id")
+      }
+
+      # 合并得到完整的该水平数据
+      final_level_data <- dplyr::bind_rows(existing_data, merged_by_study)
+
+      # 更新合成数据存储：移除旧版本，添加合并后的数据
+      old_synth <- synth_data %>% dplyr::filter(subgroup_level != new_name)
+      synthetic_data_reactive(dplyr::bind_rows(old_synth, final_level_data))
+
+      # 自动从用户顺序中移除被合并的原始水平，并添加新水平
+      current_order <- selected_order_reactive()
+      new_order <- current_order[!current_order %in% selected_levels]
+      if (!(new_name %in% new_order)) {
+        new_order <- c(new_order, new_name)
+      }
+      selected_order_reactive(new_order)
+
+      showNotification(paste0("成功合成新水平：", new_name), type = "message")
+    }
+
+    # 确认合成按钮处理
+    observeEvent(input$confirm_synth, {
+      req(input$synth_levels, length(input$synth_levels) >= 2)
+      req(data_type() == "survival")
+      req(base_data())
+
+      new_name <- input$synth_name
+      selected_levels <- input$synth_levels
+      method_original <- input$synth_method
+
+      if (new_name %in% selected_levels) {
+        showNotification("新水平名称不能与要合并的任一水平相同。", type = "error")
+        return()
+      }
+
+      # 如果用户选择了 MH 法，弹出确认框
+      if (method_original == "mh") {
+        pending_synth(list(selected_levels = selected_levels, new_name = new_name))
+        showModal(
+          modalDialog(
+            title = "方法切换确认",
+            "生存数据合成仅支持逆方差加权法（基于 HR 及其标准误）。是否切换为逆方差加权法继续合成？",
+            footer = tagList(
+              modalButton("取消"),
+              actionButton(ns("confirm_switch"), "确认切换", class = "btn-primary")
+            ),
+            easyClose = FALSE
+          )
+        )
+        return()
+      }
+
+      # 直接执行合成
+      tryCatch({
+        perform_synthesis(selected_levels, new_name, "invvar")
+        removeModal()
+      }, error = function(e) {
+        showNotification(paste("合成失败：", e$message), type = "error")
+      })
+    })
+
+    # 用户确认切换后的处理
+    observeEvent(input$confirm_switch, {
+      req(pending_synth())
+      params <- pending_synth()
+      removeModal()
+      tryCatch({
+        perform_synthesis(params$selected_levels, params$new_name, "invvar")
+        removeModal()
+      }, error = function(e) {
+        showNotification(paste("合成失败：", e$message), type = "error")
+      })
+      pending_synth(NULL)
+    })
+
+    return(list(new_level = reactive({ input$synth_name })))
+  })
+}

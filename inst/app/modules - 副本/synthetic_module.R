@@ -1,4 +1,4 @@
-# synthetic_module.R
+# modules/synthetic_module.R
 library(shiny)
 library(dplyr)
 library(shinyjs)
@@ -22,7 +22,7 @@ syntheticServer <- function(id,
 
     # 定义空合成数据模板（包含所有必要列）
     empty_synth_template <- data.frame(
-      study_id = character(),
+      unique_id = character(),
       study_display = character(),
       te = numeric(),
       se_te = numeric(),
@@ -32,7 +32,7 @@ syntheticServer <- function(id,
       stringsAsFactors = FALSE
     )
 
-    # 用于存储待确认的合成参数（当需要切换方法时）
+    # 用于存储待确认的合成参数
     pending_synth <- reactiveVal(NULL)
 
     # 控制按钮启用/禁用
@@ -127,16 +127,16 @@ syntheticServer <- function(id,
         synth_data <- empty_synth_template
       }
 
-      # 筛选要合并的水平数据（使用基础 R 子集）
+      # 筛选要合并的水平数据
       raw_data_to_be_transformed <- base_df[base_df$subgroup_level %in% selected_levels, , drop = FALSE]
       if (nrow(raw_data_to_be_transformed) == 0) {
         showNotification("所选水平下没有可用数据。", type = "warning")
         return()
       }
 
-      # 合并（仅支持逆方差加权）
+      # 合并（逆方差加权）
       merged_by_study <- raw_data_to_be_transformed %>%
-        dplyr::group_by(study_id, study_display) %>%
+        dplyr::group_by(unique_id, study_display) %>%
         dplyr::group_modify(~ combine_survival_invvar(.x)) %>%
         dplyr::ungroup() %>%
         dplyr::mutate(subgroup_level = new_name)
@@ -150,15 +150,14 @@ syntheticServer <- function(id,
       existing_original <- new_name %in% available_levels()
       existing_synth <- new_name %in% synth_data$subgroup_level
 
-      # 准备存储已有数据的数据框
       existing_data <- data.frame()
 
-      # 1. 处理原始数据中的同名水平（保留 subgroup_level 列）
+      # 1. 处理原始数据中的同名水平
       if (existing_original) {
         existing_raw <- tryCatch({
           idx <- which(base_df$subgroup_level == new_name)
           if (length(idx) > 0) {
-            df <- base_df[idx, c("study_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
+            df <- base_df[idx, c("unique_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
             df$source <- "raw"
             df
           } else {
@@ -168,18 +167,17 @@ syntheticServer <- function(id,
           cat("错误：在获取原始水平数据时出错：", e$message, "\n")
           data.frame()
         })
-
         if (nrow(existing_raw) > 0) {
           existing_data <- dplyr::bind_rows(existing_data, existing_raw)
         }
       }
 
-      # 2. 处理合成数据中的同名水平（保留 subgroup_level 列）
+      # 2. 处理合成数据中的同名水平
       if (existing_synth && nrow(synth_data) > 0 && "subgroup_level" %in% colnames(synth_data)) {
         existing_synth_df <- tryCatch({
           idx <- which(synth_data$subgroup_level == new_name)
           if (length(idx) > 0) {
-            df <- synth_data[idx, c("study_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
+            df <- synth_data[idx, c("unique_id", "study_display", "te", "se_te", "n1", "n2", "subgroup_level"), drop = FALSE]
             df$source <- "synth"
             df
           } else {
@@ -189,36 +187,35 @@ syntheticServer <- function(id,
           cat("错误：在获取合成水平数据时出错：", e$message, "\n")
           data.frame()
         })
-
         if (nrow(existing_synth_df) > 0) {
           existing_data <- dplyr::bind_rows(existing_data, existing_synth_df)
         }
       }
 
-      # 对已有数据进行去重（每个研究只保留一条，优先保留合成数据）
+      # 对已有数据进行去重（每个 unique_id 只保留一条，优先保留合成数据）
       if (nrow(existing_data) > 0) {
         existing_data <- existing_data %>%
-          dplyr::group_by(study_id) %>%
+          dplyr::group_by(unique_id) %>%
           dplyr::arrange(desc(source == "synth")) %>%
           dplyr::slice(1) %>%
           dplyr::ungroup() %>%
-          dplyr::select(-source)   # 注意：subgroup_level 列仍然保留
+          dplyr::select(-source)
       }
 
-      # 新合成的数据中，排除已经存在于 existing_data 中的研究
+      # 排除已存在的 unique_id
       if (nrow(existing_data) > 0) {
         merged_by_study <- merged_by_study %>%
-          dplyr::anti_join(existing_data, by = "study_id")
+          dplyr::anti_join(existing_data, by = "unique_id")
       }
 
-      # 合并后得到完整的该水平数据（两者都已包含 subgroup_level 列）
+      # 合并得到完整的该水平数据
       final_level_data <- dplyr::bind_rows(existing_data, merged_by_study)
 
-      # 更新合成数据存储：移除旧版本（如果存在），然后添加合并后的数据
+      # 更新合成数据存储：移除旧版本，添加合并后的数据
       old_synth <- synth_data %>% dplyr::filter(subgroup_level != new_name)
       synthetic_data_reactive(dplyr::bind_rows(old_synth, final_level_data))
 
-      # 自动从用户顺序中移除被合并的原始水平（如果它们还在顺序中）
+      # 自动从用户顺序中移除被合并的原始水平，并添加新水平
       current_order <- selected_order_reactive()
       new_order <- current_order[!current_order %in% selected_levels]
       if (!(new_name %in% new_order)) {

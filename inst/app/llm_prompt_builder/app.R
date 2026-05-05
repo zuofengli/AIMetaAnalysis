@@ -38,13 +38,25 @@ read_reference_sheet <- function(sheet_name) {
 
 load_sheet_data <- function(sheet_name) {
   df <- read_reference_sheet(sheet_name)
-  if (is.null(df)) return(list(outcomes = character(), col_names = character()))
-  if ("removed" %in% names(df)) {
-    df <- df %>% filter(is.na(removed) | removed != "YES")
+
+  if (is.null(df)) {
+    return(list(outcomes = character(), col_names = character()))
   }
-  outcomes <- unique(df$outcome)
+
+  # ✅ 关键：统一列名（你旧项目大概率做过这一步）
+  colnames(df) <- trimws(tolower(colnames(df)))
+
+  # ✅ 安全过滤 removed
+  if ("removed" %in% colnames(df)) {
+    df <- df[df$removed != "yes" | is.na(df$removed), , drop = FALSE]
+  }
+
+  # ✅ outcome 也要防御
+  outcomes <- if ("outcome" %in% colnames(df)) unique(df$outcome) else character()
   outcomes <- outcomes[!is.na(outcomes)]
-  col_names <- names(df)
+
+  col_names <- colnames(df)
+
   list(outcomes = outcomes, col_names = col_names)
 }
 
@@ -63,7 +75,7 @@ load_data_dictionary <- function(file) {
     error = function(e) NULL
   )
   if (is.null(dict_df) || nrow(dict_df) == 0) return(list())
-  dict_df <- dict_df %>% filter(status == "active")
+  dict_df <- dict_df %>% dplyr::filter(status == "active")
   dict <- list()
   for (i in 1:nrow(dict_df)) {
     dtype <- dict_df$data_type[i]
@@ -133,10 +145,10 @@ read_user_inputs <- function(trial, pub_year, data_type = NULL, outcome_name = N
     error = function(e) data.frame()
   )
   if (nrow(df) == 0) return(df)
-  df <- df %>% filter(trial == !!trial, pub_year == !!pub_year)
-  if (!is.null(data_type)) df <- df %>% filter(data_type == !!data_type)
-  if (!is.null(outcome_name)) df <- df %>% filter(outcome_name == !!outcome_name)
-  if (!is.null(section_name)) df <- df %>% filter(section_name == !!section_name)
+  df <- df %>% dplyr::filter(trial == !!trial, pub_year == !!pub_year)
+  if (!is.null(data_type)) df <- df %>% dplyr::filter(data_type == !!data_type)
+  if (!is.null(outcome_name)) df <- df %>% dplyr::filter(outcome_name == !!outcome_name)
+  if (!is.null(section_name)) df <- df %>% dplyr::filter(section_name == !!section_name)
 
   # 读取对应图片（如果存在）
   df$image_base64 <- NA_character_
