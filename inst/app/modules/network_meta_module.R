@@ -1,4 +1,4 @@
-# modules/network_meta_module.R (最终版 – 上三角联赛表 + 清晰方向)
+# modules/network_meta_module.R (修复版 - 确保UI显示)
 library(shiny)
 library(DT)
 library(dplyr)
@@ -14,6 +14,23 @@ networkMetaUI <- function(id) {
   ns <- NS(id)
   tagList(
     h3("网络荟萃分析 (Network Meta-Analysis)"),
+
+    # 绿色配置面板 - 移到了最前面确保可见
+    div(
+      class = "well",
+      style = "background-color: #d9edf7; padding: 15px; margin-bottom: 15px; border-left: 4px solid #5cb85c;",
+      h5("🔧 治疗组列映射设置", style = "color: #3c763d; margin-top: 0;"),
+      fluidRow(
+        column(5, uiOutput(ns("exp_col_ui"))),
+        column(5, uiOutput(ns("comp_col_ui"))),
+        column(2, br(), actionButton(ns("apply_col_mapping"), "应用映射",
+                                     icon = icon("sync"), class = "btn-info btn-sm"))
+      ),
+      p(class = "text-muted", style = "margin-bottom: 0; margin-top: 8px;",
+        "💡 提示：系统会自动检测并推荐列名，您也可以手动选择其他列。")
+    ),
+
+    # 原有配置区域
     fluidRow(
       column(3, selectInput(ns("nma_method"), "估计方法",
                             choices = c("限制性最大似然 (REML)" = "REML",
@@ -25,6 +42,7 @@ networkMetaUI <- function(id) {
       column(3, br(), actionButton(ns("run_nma"), "运行网络分析",
                                    icon = icon("play"), class = "btn-primary"))
     ),
+
     fluidRow(
       column(3, checkboxInput(ns("show_pop_size"), "在节点上显示样本量", value = TRUE)),
       column(9, textOutput(ns("nma_status")))
@@ -78,9 +96,140 @@ networkMetaUI <- function(id) {
 networkMetaServer <- function(id, data_type, outcome, selected_studies, current_data, studies_info) {
   moduleServer(id, function(input, output, session) {
 
+    # 存储用户选择的列映射
+    col_mapping <- reactiveValues(
+      exp_col = NULL,
+      comp_col = NULL
+    )
+
+    # 自动检测可能的 Experimental 列
+    detect_exp_columns <- reactive({
+      req(studies_info)
+      all_cols <- names(studies_info)
+
+      # 定义匹配模式（按优先级）
+      patterns <- c(
+        "^Experimental$",
+        "^experimental$",
+        "^treat1$",
+        "^Experimental_Test_\\d+$",
+        "^Exp_\\d+$",
+        "^Treatment$",
+        "^Intervention$"
+      )
+
+      matched <- c()
+      for (pattern in patterns) {
+        matched <- c(matched, grep(pattern, all_cols, value = TRUE, ignore.case = FALSE))
+      }
+
+      # 去重并保持唯一
+      matched <- unique(matched)
+
+      # 如果没有匹配到，提供所有列供选择
+      if (length(matched) == 0) {
+        matched <- all_cols
+      }
+
+      return(matched)
+    })
+
+    # 自动检测可能的 Comparator 列
+    detect_comp_columns <- reactive({
+      req(studies_info)
+      all_cols <- names(studies_info)
+
+      # 定义匹配模式（按优先级）
+      patterns <- c(
+        "^Comparator$",
+        "^comparator$",
+        "^treat2$",
+        "^Comparator_Test_\\d+$",
+        "^Comp_\\d+$",
+        "^Control$",
+        "^Placebo$"
+      )
+
+      matched <- c()
+      for (pattern in patterns) {
+        matched <- c(matched, grep(pattern, all_cols, value = TRUE, ignore.case = FALSE))
+      }
+
+      # 去重并保持唯一
+      matched <- unique(matched)
+
+      # 如果没有匹配到，提供所有列供选择
+      if (length(matched) == 0) {
+        matched <- all_cols
+      }
+
+      return(matched)
+    })
+
+    # 渲染 Experimental 列选择器
+    output$exp_col_ui <- renderUI({
+      req(studies_info)
+      exp_options <- detect_exp_columns()
+
+      # 确定默认值
+      default_exp <- NULL
+      if ("Experimental" %in% exp_options) {
+        default_exp <- "Experimental"
+      } else if ("experimental" %in% exp_options) {
+        default_exp <- "experimental"
+      } else if ("treat1" %in% exp_options) {
+        default_exp <- "treat1"
+      } else if (length(exp_options) > 0) {
+        default_exp <- exp_options[1]
+      }
+
+      selectInput(session$ns("selected_exp_col"),
+                  label = tagList(icon("flask"), "Experimental 列 (治疗组)"),
+                  choices = exp_options,
+                  selected = default_exp)
+    })
+
+    # 渲染 Comparator 列选择器
+    output$comp_col_ui <- renderUI({
+      req(studies_info)
+      comp_options <- detect_comp_columns()
+
+      # 确定默认值
+      default_comp <- NULL
+      if ("Comparator" %in% comp_options) {
+        default_comp <- "Comparator"
+      } else if ("comparator" %in% comp_options) {
+        default_comp <- "comparator"
+      } else if ("treat2" %in% comp_options) {
+        default_comp <- "treat2"
+      } else if (length(comp_options) > 0) {
+        default_comp <- comp_options[1]
+      }
+
+      selectInput(session$ns("selected_comp_col"),
+                  label = tagList(icon("chart-line"), "Comparator 列 (对照组)"),
+                  choices = comp_options,
+                  selected = default_comp)
+    })
+
+    # 应用列映射
+    observeEvent(input$apply_col_mapping, {
+      req(input$selected_exp_col, input$selected_comp_col)
+
+      col_mapping$exp_col <- input$selected_exp_col
+      col_mapping$comp_col <- input$selected_comp_col
+
+      showNotification(
+        paste("✅ 已应用映射：", col_mapping$exp_col, "→ 治疗组，",
+              col_mapping$comp_col, "→ 对照组"),
+        type = "message",  # ✅ 修复：使用 "message"
+        duration = 3
+      )
+    })
+
     output$nma_status <- renderText({
       if (is.null(nma_result())) {
-        "状态：尚未运行 NMA（请点击“运行网络分析”按钮）"
+        "状态：尚未运行 NMA（请点击\"运行网络分析\"按钮）"
       } else {
         "状态：NMA 已运行成功"
       }
@@ -106,26 +255,56 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       }
     })
 
+    # 修改 treat_info 函数，使用用户选择的列映射
     treat_info <- reactive({
       req(studies_info)
-      exp_col <- NULL
-      comp_col <- NULL
-      if ("Experimental" %in% names(studies_info) && "Comparator" %in% names(studies_info)) {
-        exp_col <- "Experimental"
-        comp_col <- "Comparator"
-      } else if ("experimental" %in% names(studies_info) && "comparator" %in% names(studies_info)) {
-        exp_col <- "experimental"
-        comp_col <- "comparator"
-      } else if ("treat1" %in% names(studies_info) && "treat2" %in% names(studies_info)) {
-        exp_col <- "treat1"
-        comp_col <- "treat2"
+
+      # 优先使用用户选择的列
+      if (!is.null(col_mapping$exp_col) && !is.null(col_mapping$comp_col)) {
+        exp_col <- col_mapping$exp_col
+        comp_col <- col_mapping$comp_col
+
+        # 验证列是否存在
+        if (!(exp_col %in% names(studies_info))) {
+          showNotification(paste("选定的 Experimental 列 '", exp_col, "' 不存在于数据中"), type = "error")
+          return(NULL)
+        }
+        if (!(comp_col %in% names(studies_info))) {
+          showNotification(paste("选定的 Comparator 列 '", comp_col, "' 不存在于数据中"), type = "error")
+          return(NULL)
+        }
       } else {
-        showNotification("studies_info 中缺少治疗相关列", type = "error")
+        # 如果没有用户选择，使用自动检测逻辑
+        exp_col <- NULL
+        comp_col <- NULL
+
+        if ("Experimental" %in% names(studies_info) && "Comparator" %in% names(studies_info)) {
+          exp_col <- "Experimental"
+          comp_col <- "Comparator"
+        } else if ("experimental" %in% names(studies_info) && "comparator" %in% names(studies_info)) {
+          exp_col <- "experimental"
+          comp_col <- "comparator"
+        } else if ("treat1" %in% names(studies_info) && "treat2" %in% names(studies_info)) {
+          exp_col <- "treat1"
+          comp_col <- "treat2"
+        } else {
+          showNotification("studies_info 中缺少治疗相关列，请手动选择", type = "warning")
+          return(NULL)
+        }
+      }
+
+      # 检查 studies_info 是否有 unique_id 列
+      if (!"unique_id" %in% names(studies_info)) {
+        showNotification("studies_info 必须包含 'unique_id' 列", type = "error")
         return(NULL)
       }
-      studies_info %>%
-        select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
-        distinct(unique_id, .keep_all = TRUE)
+
+      # 提取并重命名
+      result <- studies_info %>%
+        dplyr::select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
+        dplyr::distinct(unique_id, .keep_all = TRUE)
+
+      return(result)
     })
 
     all_treatments <- reactive({

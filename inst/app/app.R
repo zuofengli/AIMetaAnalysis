@@ -1,4 +1,4 @@
-# ==================== app.R ====================
+# app.R (修改后)
 library(shiny)
 library(shinyjs)
 library(DT)
@@ -18,7 +18,7 @@ if (!requireNamespace("metaviz", quietly = TRUE)) {
 
 # ---------- 加载模块 ----------
 source("modules/network_meta_module.R")
-source("modules/bayesian_meta_module.R")
+# source("modules/bayesian_meta_module.R")  # 临时注释
 source("modules/snapshot_module.R")
 source("modules/data_loading.R")
 source("modules/data_selection_module.R")
@@ -60,8 +60,8 @@ ui <- fluidPage(
   tabsetPanel(
     id = "analysis_tab",
     tabPanel("经典荟萃分析", classicalMetaUI("classical")),
-    tabPanel("网络荟萃分析", networkMetaUI("network")),
-    tabPanel("贝叶斯荟萃分析", bayesianMetaUI("bayesian"))
+    tabPanel("网络荟萃分析", networkMetaUI("network"))
+    # tabPanel("贝叶斯荟萃分析", bayesianMetaUI("bayesian"))  # 临时注释
   ),
 
   # 快照模块
@@ -123,46 +123,40 @@ server <- function(input, output, session) {
                                    outcome          = reactive(data_selected()$outcome),
                                    subgroup         = reactive(data_selected()$subgroup),
                                    study_group_var  = reactive(data_selected()$study_group_var),
-                                   selected_studies  = reactive(data_selected()$current_data$unique_id),  # ✅ 修改
+                                   selected_studies  = reactive(data_selected()$current_data$unique_id),
                                    current_data     = reactive(data_selected()$current_data)
   )
 
   network <- networkMetaServer("network",
                                data_type      = reactive(data_selected()$data_type),
                                outcome        = reactive(data_selected()$outcome),
-                               selected_studies = reactive(data_selected()$current_data$unique_id),   # ✅ 已修正
+                               selected_studies = reactive(data_selected()$current_data$unique_id),
                                current_data   = reactive(data_selected()$current_data),
-                               studies_info   = studies_info                                         # ✅ 新增
+                               studies_info   = studies_info
   )
 
-  bayesian <- bayesianMetaServer(
-    "bayesian",
-
-    data_type = reactive(data_selected()$data_type),
-
-    current_data = reactive(data_selected()$current_data),
-
-    studies_info = reactive(data_selected()$studies_info),
-
-    selected_studies = reactive(
-      unique(data_selected()$current_data$unique_id)
-    )
-  )
+  # bayesian <- bayesianMetaServer(  # 临时注释
+  #   "bayesian",
+  #   data_type = reactive(data_selected()$data_type),
+  #   current_data = reactive(data_selected()$current_data),
+  #   studies_info = reactive(data_selected()$studies_info),
+  #   selected_studies = reactive(unique(data_selected()$current_data$unique_id))
+  # )
 
   # 切换活跃结果
   active_meta_result <- reactive({
     switch(input$analysis_tab,
            "经典荟萃分析" = classical$meta_result(),
-           "网络荟萃分析" = network$meta_result(),
-           "贝叶斯荟萃分析" = bayesian$meta_result()
+           "网络荟萃分析" = network$meta_result()
+           # "贝叶斯荟萃分析" = bayesian$meta_result()  # 临时注释
     )
   })
 
   active_model <- reactive({
     switch(input$analysis_tab,
            "经典荟萃分析" = classical$model(),
-           "网络荟萃分析" = network$model(),
-           "贝叶斯荟萃分析" = bayesian$model()
+           "网络荟萃分析" = network$model()
+           # "贝叶斯荟萃分析" = bayesian$model()  # 临时注释
     )
   })
 
