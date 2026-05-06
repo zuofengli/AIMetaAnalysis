@@ -1,4 +1,4 @@
-# modules/network_meta_module.R (修复版 - 确保UI显示)
+# modules/network_meta_module.R (完整版 - 使用独立联赛表模块)
 library(shiny)
 library(DT)
 library(dplyr)
@@ -9,13 +9,16 @@ if (!requireNamespace("NMA", quietly = TRUE)) {
 }
 library(NMA)
 
+# 加载独立的联赛表模块
+source("modules/league_table_module.R")
+
 # ===================== UI 模块 =====================
 networkMetaUI <- function(id) {
   ns <- NS(id)
   tagList(
     h3("网络荟萃分析 (Network Meta-Analysis)"),
 
-    # 绿色配置面板 - 移到了最前面确保可见
+    # 绿色配置面板
     div(
       class = "well",
       style = "background-color: #d9edf7; padding: 15px; margin-bottom: 15px; border-left: 4px solid #5cb85c;",
@@ -65,26 +68,8 @@ networkMetaUI <- function(id) {
     uiOutput(ns("rank_output_ui")),
     hr(),
 
-    # ========== 联赛表区域 ==========
-    h4("联赛表 (League Table)"),
-    div(
-      class = "well",
-      style = "background-color: #f5f5f5; padding: 10px; margin-bottom: 15px; border-left: 4px solid #337ab7;",
-      h5("📖 如何解读联赛表？"),
-      tags$ul(
-        tags$li(HTML("🔍 <strong>上三角展示结果</strong>，方向：<strong>行治疗 vs 列治疗</strong>（行/列 或 行−列；行治疗为分子/被比较组，列治疗为分母/参照组）。")),
-        tags$li("📊 **效应量判断**：若为 OR/RR/HR，看区间是否包含 1；若为 RD/MD，看区间是否包含 0。"),
-        tags$li("🎯 **红色加粗**表示该比较具有统计学显著性。"),
-        tags$li("⚖️ **下三角已清空**，上三角值互为倒数（OR/RR/HR）或相反数（MD/RD）—— 高分期刊常规做法。")
-      ),
-      actionLink(ns("show_league_guide"), "📘 点击查看详细解读案例", icon = icon("book"))
-    ),
-    fluidRow(
-      column(6, p(strong("对比方向："), "行治疗 vs 列治疗（行治疗为分子/被比较组，列治疗为分母/参照组）")),
-      column(6, downloadButton(ns("download_league"), "下载联赛表 (CSV)", class = "btn-success pull-right"))
-    ),
-    verbatimTextOutput(ns("league_error")),
-    DTOutput(ns("league_table")),
+    # ========== 联赛表区域（使用独立模块） ==========
+    leagueTableUI(ns("league_table")),
     hr(),
 
     h4("原始输入数据预览"),
@@ -107,7 +92,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       req(studies_info)
       all_cols <- names(studies_info)
 
-      # 定义匹配模式（按优先级）
       patterns <- c(
         "^Experimental$",
         "^experimental$",
@@ -123,10 +107,7 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
         matched <- c(matched, grep(pattern, all_cols, value = TRUE, ignore.case = FALSE))
       }
 
-      # 去重并保持唯一
       matched <- unique(matched)
-
-      # 如果没有匹配到，提供所有列供选择
       if (length(matched) == 0) {
         matched <- all_cols
       }
@@ -139,7 +120,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       req(studies_info)
       all_cols <- names(studies_info)
 
-      # 定义匹配模式（按优先级）
       patterns <- c(
         "^Comparator$",
         "^comparator$",
@@ -155,10 +135,7 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
         matched <- c(matched, grep(pattern, all_cols, value = TRUE, ignore.case = FALSE))
       }
 
-      # 去重并保持唯一
       matched <- unique(matched)
-
-      # 如果没有匹配到，提供所有列供选择
       if (length(matched) == 0) {
         matched <- all_cols
       }
@@ -171,7 +148,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       req(studies_info)
       exp_options <- detect_exp_columns()
 
-      # 确定默认值
       default_exp <- NULL
       if ("Experimental" %in% exp_options) {
         default_exp <- "Experimental"
@@ -194,7 +170,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       req(studies_info)
       comp_options <- detect_comp_columns()
 
-      # 确定默认值
       default_comp <- NULL
       if ("Comparator" %in% comp_options) {
         default_comp <- "Comparator"
@@ -220,9 +195,9 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       col_mapping$comp_col <- input$selected_comp_col
 
       showNotification(
-        paste("✅ 已应用映射：", col_mapping$exp_col, "→ 治疗组，",
+        paste("已应用映射：", col_mapping$exp_col, "→ 治疗组，",
               col_mapping$comp_col, "→ 对照组"),
-        type = "message",  # ✅ 修复：使用 "message"
+        type = "message",
         duration = 3
       )
     })
@@ -255,16 +230,14 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       }
     })
 
-    # 修改 treat_info 函数，使用用户选择的列映射
+    # 修改 treat_info 函数
     treat_info <- reactive({
       req(studies_info)
 
-      # 优先使用用户选择的列
       if (!is.null(col_mapping$exp_col) && !is.null(col_mapping$comp_col)) {
         exp_col <- col_mapping$exp_col
         comp_col <- col_mapping$comp_col
 
-        # 验证列是否存在
         if (!(exp_col %in% names(studies_info))) {
           showNotification(paste("选定的 Experimental 列 '", exp_col, "' 不存在于数据中"), type = "error")
           return(NULL)
@@ -274,7 +247,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
           return(NULL)
         }
       } else {
-        # 如果没有用户选择，使用自动检测逻辑
         exp_col <- NULL
         comp_col <- NULL
 
@@ -293,13 +265,11 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
         }
       }
 
-      # 检查 studies_info 是否有 unique_id 列
       if (!"unique_id" %in% names(studies_info)) {
         showNotification("studies_info 必须包含 'unique_id' 列", type = "error")
         return(NULL)
       }
 
-      # 提取并重命名
       result <- studies_info %>%
         dplyr::select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
         dplyr::distinct(unique_id, .keep_all = TRUE)
@@ -417,39 +387,50 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       req(nd)
       ref_trt <- input$ref_trt
 
-      if (nd$type == "binary") {
-        setup_obj <- tryCatch({
-          NMA::setup(study = study, trt = trt, d = d, n = n, measure = nd$measure, ref = ref_trt, data = nd$data)
-        }, error = function(e) {
-          showNotification(paste("setup 失败：", e$message), type = "error")
-          NULL
-        })
-        if (is.null(setup_obj)) return(NULL)
+      withProgress(message = '运行 NMA 分析...', value = 0.3, {
 
-        res <- tryCatch({
-          NMA::nma(setup_obj, method = input$nma_method, eform = (nd$measure != "RD"))
-        }, error = function(e) {
-          showNotification(paste("NMA 运行失败：", e$message), type = "error")
-          NULL
-        })
-        list(result = res, setup = setup_obj, type = "binary", measure = nd$measure)
-      } else {
-        setup_obj <- tryCatch({
-          NMA::setup(study = study, trt = trt, d = d, n = n, measure = nd$measure, ref = ref_trt, data = nd$data)
-        }, error = function(e) {
-          showNotification(paste("setup 失败：", e$message), type = "error")
-          NULL
-        })
-        if (is.null(setup_obj)) return(NULL)
+        if (nd$type == "binary") {
+          setup_obj <- tryCatch({
+            incProgress(0.6, detail = "设置模型...")
+            NMA::setup(study = study, trt = trt, d = d, n = n,
+                       measure = nd$measure, ref = ref_trt, data = nd$data)
+          }, error = function(e) {
+            showNotification(paste("setup 失败：", e$message), type = "error")
+            NULL
+          })
+          if (is.null(setup_obj)) return(NULL)
 
-        res <- tryCatch({
-          NMA::nma(setup_obj, method = input$nma_method, eform = TRUE)
-        }, error = function(e) {
-          showNotification(paste("NMA 运行失败：", e$message), type = "error")
-          NULL
-        })
-        list(result = res, setup = setup_obj, type = "survival", measure = nd$measure)
-      }
+          res <- tryCatch({
+            incProgress(0.9, detail = "运行模型...")
+            NMA::nma(setup_obj, method = input$nma_method, eform = (nd$measure != "RD"))
+          }, error = function(e) {
+            showNotification(paste("NMA 运行失败：", e$message), type = "error")
+            NULL
+          })
+          incProgress(1, detail = "完成!")
+          list(result = res, setup = setup_obj, type = "binary", measure = nd$measure)
+        } else {
+          setup_obj <- tryCatch({
+            incProgress(0.6, detail = "设置模型...")
+            NMA::setup(study = study, trt = trt, d = d, n = n,
+                       measure = nd$measure, ref = ref_trt, data = nd$data)
+          }, error = function(e) {
+            showNotification(paste("setup 失败：", e$message), type = "error")
+            NULL
+          })
+          if (is.null(setup_obj)) return(NULL)
+
+          res <- tryCatch({
+            incProgress(0.9, detail = "运行模型...")
+            NMA::nma(setup_obj, method = input$nma_method, eform = TRUE)
+          }, error = function(e) {
+            showNotification(paste("NMA 运行失败：", e$message), type = "error")
+            NULL
+          })
+          incProgress(1, detail = "完成!")
+          list(result = res, setup = setup_obj, type = "survival", measure = nd$measure)
+        }
+      })
     })
 
     output$netplot <- renderPlot({
@@ -458,19 +439,34 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       tryCatch({
         NMA::netplot(setup_obj, text = TRUE, base.cex = 1.2)
       }, error = function(e) {
-        plot(1, type = "n", axes = FALSE, xlab = "", ylab = "", main = paste("网络图绘制失败:\n", e$message))
+        plot(1, type = "n", axes = FALSE, xlab = "", ylab = "",
+             main = paste("网络图绘制失败:\n", e$message), col = "red")
+        text(1, 1, "请检查数据是否满足NMA分析要求", cex = 1.2)
       })
     })
 
     output$nmaforest <- renderPlot({
       req(nma_result())
-      NMA::nmaforest(nma_result()$setup, method = input$nma_method)
+      setup_obj <- nma_result()$setup
+
+      tryCatch({
+        suppressWarnings({
+          NMA::nmaforest(setup_obj, method = input$nma_method)
+        })
+      }, error = function(e) {
+        plot(1, type = "n", axes = FALSE, xlab = "", ylab = "",
+             main = "森林图暂时无法显示", col = "red")
+        text(1, 1, paste("提示：模型可能未收敛或数据不足\n错误信息:", e$message), cex = 1.1)
+      })
     })
 
     output$nma_summary <- renderPrint({
       res <- nma_result()
       if (is.null(res) || is.null(res$result)) {
-        cat("未获得有效结果。")
+        cat("未获得有效结果。请检查：\n")
+        cat("1. 至少选择2个研究\n")
+        cat("2. 数据中治疗组名称匹配\n")
+        cat("3. 治疗效果指标选择正确\n")
       } else {
         print(res$result)
       }
@@ -489,7 +485,6 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       } else {
         trt_names <- all_treatments()
       }
-      if (is.null(trt_names) || length(trt_names) == 0) trt_names <- paste0("Tx", seq_len(length(rank$SUCRA)))
 
       rank <- tryCatch({
         NMA::nmarank(res$result, method = input$nma_method)
@@ -561,142 +556,47 @@ networkMetaServer <- function(id, data_type, outcome, selected_studies, current_
       if (is.null(rank)) cat("未能计算排名。") else print(rank)
     })
 
-    # ========== 联赛表（nmaleague 解析 + 上三角） ==========
-    observeEvent(input$show_league_guide, {
-      showModal(modalDialog(
-        title = "📘 联赛表详细解读指南",
-        size = "l",
-        easyClose = TRUE,
-        footer = modalButton("关闭"),
-        tags$div(
-          h5("1. 对比方向"),
-          p("上三角为：行治疗 vs 列治疗。行治疗为分子/被比较组，列治疗为分母/参照组。"),
-          h5("2. 显著性判断"),
-          p("• OR/RR/HR：区间不包含 1 为显著；RD/MD：区间不包含 0 为显著。"),
-          h5("3. 示例"),
-          tags$table(class = "table table-bordered",
-                     tags$thead(tags$tr(tags$th(""), tags$th("药物A"), tags$th("药物B"), tags$th("安慰剂"))),
-                     tags$tbody(
-                       tags$tr(tags$td("药物A"), tags$td("1 (ref)"), tags$td("1.50 (0.80, 2.20)"), tags$td("3.20 (2.10, 4.30)")),
-                       tags$tr(tags$td("药物B"), tags$td(""), tags$td("1 (ref)"), tags$td("1.70 (1.10, 2.30)")),
-                       tags$tr(tags$td("安慰剂"), tags$td(""), tags$td(""), tags$td("1 (ref)"))
-                     )
-          ),
-          p("药物A vs 安慰剂：3.20 (2.10, 4.30) → 显著；药物A vs 药物B：1.50 (0.80, 2.20) → 不显著。"),
-          h5("4. 为什么有负值？"),
-          p("当指标为风险差 (RD) 或均值差 (MD) 时，数值可正可负，以 0 为无效线。这是完全正确的。")
-        )
-      ))
-    })
+    # ========== 调用独立的联赛表模块 ==========
+    # 修复：正确传递 RD 类型并添加调试
+    leagueTableServer("league_table",
+                      nma_result = nma_result,
+                      rank_result = rank_result,
+                      effect_type = reactive({
+                        res <- nma_result()
+                        if (is.null(res)) {
+                          cat("effect_type: nma_result 为 NULL\n")
+                          return("OR")
+                        }
 
-    league_table <- reactive({
-      res <- nma_result()
-      if (is.null(res) || is.null(res$setup)) {
-        output$league_error <- renderText("❌ 错误：NMA 结果尚未准备好，请先运行网络分析。")
-        return(NULL)
-      }
+                        cat("\n=== 计算 effect_type ===\n")
+                        cat("res$type:", res$type, "\n")
+                        cat("res$measure:", res$measure, "\n")
 
-      eform_flag <- TRUE
-      if (res$type == "binary" && !is.null(res$measure) && res$measure == "RD") {
-        eform_flag <- FALSE
-      }
-
-      league <- tryCatch(
-        NMA::nmaleague(res$setup, method = input$nma_method, eform = eform_flag),
-        error = function(e) {
-          output$league_error <- renderText(paste("❌ nmaleague 运行失败：", conditionMessage(e)))
-          NULL
-        }
-      )
-
-      if (is.null(league)) return(NULL)
-
-      if (is.list(league) && !is.data.frame(league) && !is.null(league$R) && is.matrix(league$R)) {
-        mat_raw <- league$R
-        trt_names <- diag(mat_raw)
-        n_trt <- length(trt_names)
-        if (n_trt < 2) return(NULL)
-
-        # 对角线设置为 "1 (ref)"
-        mat_raw[cbind(seq_len(n_trt), seq_len(n_trt))] <- "1 (ref)"
-        league_df <- as.data.frame(mat_raw, stringsAsFactors = FALSE)
-        colnames(league_df) <- trt_names
-        league_df <- cbind(Treatment = trt_names, league_df)
-        rownames(league_df) <- NULL
-
-        # 只保留上三角（下三角清空）
-        m <- as.matrix(league_df[, -1])
-        m[lower.tri(m)] <- ""
-        league_df[, -1] <- m
-
-        output$league_error <- renderText("")
-        return(league_df)
-      } else {
-        output$league_error <- renderText("❌ 联赛表格式异常，请联系开发者。")
-        return(NULL)
-      }
-    })
-
-    get_effect_type <- reactive({
-      res <- nma_result()
-      if (is.null(res)) return("OR")
-      if (res$type == "binary") {
-        if (!is.null(res$measure) && res$measure == "RD") return("RD")
-        else return("OR")
-      } else {
-        return("HR")
-      }
-    })
-
-    output$league_table <- renderDT({
-      df <- league_table()
-      req(df)
-
-      eff_type <- get_effect_type()
-      threshold <- if (eff_type %in% c("OR", "RR", "HR")) 1 else 0
-
-      signif_col <- rep(FALSE, ncol(df))
-      for (j in 2:ncol(df)) {
-        any_signif <- FALSE
-        for (i in 1:nrow(df)) {
-          cell <- df[i, j]
-          if (is.character(cell) && cell != "1 (ref)" && cell != "" && grepl("\\(.+,.+\\)", cell)) {
-            matches <- regmatches(cell, regexec("\\(([0-9.]+),\\s*([0-9.]+)\\)", cell))
-            if (length(matches[[1]]) == 3) {
-              lower <- as.numeric(matches[[1]][2])
-              upper <- as.numeric(matches[[1]][3])
-              if (!is.na(lower) && !is.na(upper)) {
-                if ((threshold == 1 && (lower > 1 || upper < 1)) ||
-                    (threshold == 0 && (lower > 0 || upper < 0))) {
-                  any_signif <- TRUE
-                  break
-                }
-              }
-            }
-          }
-        }
-        signif_col[j] <- any_signif
-      }
-
-      dt <- datatable(df, options = list(pageLength = 50, scrollX = TRUE), rownames = FALSE)
-      for (j in 2:ncol(df)) {
-        if (signif_col[j]) {
-          dt <- dt %>% formatStyle(j, color = "red", fontWeight = "bold")
-        }
-      }
-      dt
-    })
-
-    output$download_league <- downloadHandler(
-      filename = function() paste0("league_table_", Sys.Date(), ".csv"),
-      content = function(file) {
-        df <- league_table()
-        if (is.null(df)) {
-          write.csv(data.frame(Message = "No league table available"), file, row.names = FALSE)
-        } else {
-          write.csv(df, file, row.names = FALSE)
-        }
-      }
+                        # 根据数据类型和测量指标确定效应类型
+                        if (res$type == "binary") {
+                          if (!is.null(res$measure)) {
+                            if (res$measure == "RD") {
+                              cat("✓ 返回: RD (风险差)\n")
+                              return("RD")
+                            } else if (res$measure == "OR") {
+                              cat("✓ 返回: OR (比值比)\n")
+                              return("OR")
+                            } else if (res$measure == "RR") {
+                              cat("✓ 返回: RR (相对风险)\n")
+                              return("RR")
+                            }
+                          }
+                          cat("⚠ measure 为空或未识别，默认 OR\n")
+                          return("OR")
+                        } else if (res$type == "survival") {
+                          cat("✓ 返回: HR (风险比)\n")
+                          return("HR")
+                        } else {
+                          cat("⚠ 未知类型，默认 OR\n")
+                          return("OR")
+                        }
+                      }),
+                      nma_method = reactive({ input$nma_method })
     )
 
     meta_result <- reactive({ nma_result()$result })
