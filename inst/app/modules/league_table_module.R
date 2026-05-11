@@ -1,11 +1,45 @@
 # modules/league_table_module.R
-# 独立的联赛表模块 - 修复 RD 显著性判断逻辑
 library(shiny)
 library(DT)
 library(dplyr)
 library(tidyr)
+library(shinyjqui)   # 拖拽排序
+library(openxlsx)    # Excel 导出及样式
 
-# ===================== UI 模块 =====================
+# 统一清洗函数（与主模块保持一致）
+clean_treatment_unified <- function(x) {
+  x <- as.character(x)
+  x <- gsub("[^A-Za-z0-9_]", "_", x)
+  x <- gsub("_+", "_", x)
+  x <- gsub("^_|_$", "", x)
+  trimws(x)
+}
+
+# ---------- 辅助：判断单元格是否显著（与 JS 逻辑完全一致）----------
+is_significant_cell <- function(cell, eff_type) {
+  if (is.null(cell) || is.na(cell) || cell == "") return(FALSE)
+  cell <- trimws(cell)
+
+  # 对角线参考值不标红
+  if (eff_type %in% c("OR","RR","HR") && grepl("^1\\s*\\(ref\\)$", cell)) return(FALSE)
+  if (eff_type %in% c("RD","MD")   && grepl("^0\\s*\\(ref\\)$", cell)) return(FALSE)
+
+  # 提取括号内的下限和上限
+  pattern <- "\\((-?[0-9.]+),\\s*(-?[0-9.]+)\\)"
+  m <- regmatches(cell, regexec(pattern, cell))[[1]]
+  if (length(m) >= 3) {
+    lower <- as.numeric(m[2])
+    upper <- as.numeric(m[3])
+
+    if (eff_type %in% c("OR","RR","HR")) {
+      return(!(lower <= 1 && upper >= 1))   # OR/RR/HR：区间不包含 1
+    } else {
+      return(!(lower <= 0 && upper >= 0))   # RD/MD：区间不包含 0
+    }
+  }
+  return(FALSE)
+}
+
 leagueTableUI <- function(id) {
   ns <- NS(id)
   tagList(
@@ -23,28 +57,37 @@ leagueTableUI <- function(id) {
       ),
       actionLink(ns("show_guide"), "📘 点击查看详细解读案例", icon = icon("book"))
     ),
-
-    # 动态解读指南
     uiOutput(ns("dynamic_guide")),
-
     fluidRow(
       column(4,
              selectInput(ns("sort_by"), "排序方式",
                          choices = c("原始顺序" = "original",
                                      "按SUCRA降序" = "sucra",
-                                     "按治疗名称排序" = "name"),
+                                     "按治疗名称排序" = "name",
+                                     "自定义顺序（拖拽）" = "custom"),
                          selected = "original")
       ),
       column(3,
              checkboxInput(ns("show_lower_tri"), "显示下三角", value = FALSE)
       ),
       column(3,
+             checkboxInput(ns("show_diag_names"), "对角线显示治疗名称（隐藏行列标题）", value = FALSE)
+      ),
+      column(2,
              actionButton(ns("reset_order"), "重置顺序",
                           icon = icon("undo"), class = "btn-warning")
       ),
       column(2,
-             downloadButton(ns("download"), "下载联赛表 (CSV)",
+             downloadButton(ns("download"), "下载联赛表 (Excel)",
                             class = "btn-success pull-right")
+      )
+    ),
+    # 自定义拖拽排序区域
+    conditionalPanel(
+      condition = sprintf("input['%s'] == 'custom'", ns("sort_by")),
+      div(style = "margin-top: 10px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;",
+          h5("↕️ 拖拽治疗标签调整顺序（上方为行/列的第一行/列）"),
+          uiOutput(ns("custom_sort_ui"))
       )
     ),
     verbatimTextOutput(ns("error_msg")),
@@ -52,62 +95,170 @@ leagueTableUI <- function(id) {
   )
 }
 
-# ===================== Server 模块 =====================
-leagueTableServer <- function(id,
-                              nma_result,      # NMA 结果对象
-                              rank_result,     # 排名结果对象
-                              effect_type,     # 效应类型 ("OR", "RR", "HR", "RD", "MD")
-                              nma_method      # NMA 方法 ("REML", "fixed", "NH")
-) {
+# ---------- 辅助函数：从贝叶斯模型构建联赛表 ----------
+build_league_table_bayesian <- function(bayes_res, measure) {
+  if (is.null(measure) || length(measure) == 0 || is.na(measure)) {
+    measure <- "OR"
+  }
+
+  model <- bayes_res$model
+  network <- bayes_res$network
+  if (is.null(network)) {
+    stop("模型中没有 network 信息")
+  }
+
+  tbl <- tryCatch(
+    gemtc::relative.effect.table(model),
+    error = function(e) stop("无法生成相对效应表: ", e$message)
+  )
+
+  mat <- NULL
+  if (is.matrix(tbl)) {
+    mat <- tbl
+  } else if (is.data.frame(tbl)) {
+    mat <- as.matrix(tbl)
+  } else {
+    tryCatch({
+      mat <- as.matrix(as.data.frame(tbl))
+    }, error = function(e) {
+      stop("无法将 relative.effect.table 结果转换为矩阵: ", e$message)
+    })
+  }
+
+  trt_names <- rownames(mat)
+  if (is.null(trt_names)) trt_names <- colnames(mat)
+
+  convert_to_or <- function(cell) {
+    if (is.na(cell) || cell == "" || grepl("\\(ref\\)", cell)) return(cell)
+    pattern <- "^(-?[0-9.]+(?:e[+-]?[0-9]+)?)\\s*\\((-?[0-9.]+(?:e[+-]?[0-9]+)?),\\s*(-?[0-9.]+(?:e[+-]?[0-9]+)?)\\)$"
+    matches <- regexec(pattern, cell)
+    extracted <- regmatches(cell, matches)[[1]]
+    if (length(extracted) == 4) {
+      log_or <- as.numeric(extracted[2])
+      log_lower <- as.numeric(extracted[3])
+      log_upper <- as.numeric(extracted[4])
+      if (!any(is.na(c(log_or, log_lower, log_upper)))) {
+        or <- exp(log_or)
+        lower <- exp(log_lower)
+        upper <- exp(log_upper)
+        return(sprintf("%.2f (%.2f, %.2f)", or, lower, upper))
+      }
+    }
+    num <- suppressWarnings(as.numeric(cell))
+    if (!is.na(num)) {
+      return(sprintf("%.2f", exp(num)))
+    }
+    return(cell)
+  }
+
+  or_mat <- matrix(NA, nrow = nrow(mat), ncol = ncol(mat))
+  for (i in 1:nrow(mat)) {
+    for (j in 1:ncol(mat)) {
+      if (i == j) {
+        or_mat[i, j] <- ifelse(measure %in% c("OR","RR","HR"), "1 (ref)", "0 (ref)")
+      } else {
+        or_mat[i, j] <- convert_to_or(mat[i, j])
+      }
+    }
+  }
+  colnames(or_mat) <- trt_names
+  rownames(or_mat) <- trt_names
+
+  df <- as.data.frame(or_mat, stringsAsFactors = FALSE)
+  df <- cbind(Treatment = trt_names, df)
+  rownames(df) <- NULL
+  df
+}
+
+# ==================== Server ====================
+leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
   moduleServer(id, function(input, output, session) {
 
-    # 存储治疗组的顺序
-    treatment_order <- reactiveVal(NULL)
+    # ---------- 效应量类型 ----------
+    get_effect_type <- reactive({
+      res <- nma_result()
+      if (is.null(res)) return("OR")
+      if (res$type == "binary") {
+        measure <- res$measure %||% "OR"
+        if (measure %in% c("RD", "OR", "RR")) return(measure)
+        return("OR")
+      } else {
+        return("HR")
+      }
+    })
 
-    # 获取原始联赛表数据
+    # 统一的显著性条件字符串，供 JS 使用
+    signif_cond_text <- reactive({
+      eff <- get_effect_type()
+      if (eff %in% c("OR","RR","HR")) {
+        "!(lower <= 1 && upper >= 1)"
+      } else {
+        "(lower > 0 || upper < 0)"
+      }
+    })
+
+    map_nma_method <- function(method) {
+      switch(method,
+             freq_REML = "REML",
+             freq_fixed = "fixed",
+             freq_NH = "NH",
+             bayes = "REML",
+             "REML")
+    }
+
+    # ---------- 原始联赛表 ----------
     league_table_raw <- reactive({
-      req(nma_result())
+      res <- nma_result()
+      req(res)
 
-      if (is.null(nma_result()$setup)) {
+      if (res$method_family == "bayesian") {
+        bayes_res <- res$result
+        measure <- get_effect_type()
+        league_df <- tryCatch(
+          build_league_table_bayesian(bayes_res, measure),
+          error = function(e) {
+            output$error_msg <- renderText(paste("贝叶斯联赛表生成失败：", e$message))
+            return(NULL)
+          }
+        )
+        if (is.null(league_df)) return(NULL)
+        output$error_msg <- renderText("")
+        return(league_df)
+      }
+
+      if (is.null(res$setup)) {
         output$error_msg <- renderText("❌ 错误：NMA 结果尚未准备好")
         return(NULL)
       }
 
-      # 根据效应类型确定 eform
-      current_effect_type <- effect_type()
+      current_effect_type <- get_effect_type()
       eform_flag <- !(current_effect_type %in% c("RD", "MD"))
+      method_nma <- map_nma_method(nma_method())
 
       league <- tryCatch(
-        NMA::nmaleague(nma_result()$setup,
-                       method = nma_method(),
+        NMA::nmaleague(res$setup,
+                       method = method_nma,
                        eform = eform_flag),
         error = function(e) {
           output$error_msg <- renderText(paste("❌ 联赛表生成失败：", conditionMessage(e)))
           NULL
         }
       )
-
       if (is.null(league)) return(NULL)
 
       if (is.list(league) && !is.data.frame(league) && !is.null(league$R) && is.matrix(league$R)) {
         mat_raw <- league$R
         trt_names <- diag(mat_raw)
         n_trt <- length(trt_names)
-
         if (n_trt < 2) {
           output$error_msg <- renderText("❌ 治疗组数量不足（少于2个）")
           return(NULL)
         }
-
-        # 设置对角线
         mat_raw[cbind(seq_len(n_trt), seq_len(n_trt))] <- "1 (ref)"
-
-        # 转换为数据框
         league_df <- as.data.frame(mat_raw, stringsAsFactors = FALSE)
         colnames(league_df) <- trt_names
         league_df <- cbind(Treatment = trt_names, league_df)
         rownames(league_df) <- NULL
-
         output$error_msg <- renderText("")
         return(league_df)
       } else {
@@ -116,18 +267,16 @@ leagueTableServer <- function(id,
       }
     })
 
-    # 获取原始治疗组顺序
+    # ---------- 排序相关 ----------
     get_original_order <- reactive({
       df <- league_table_raw()
       req(df)
       as.character(df[[1]])
     })
 
-    # 根据 SUCRA 排序
     get_sucra_order <- reactive({
       rank_df <- rank_result()
       req(rank_df)
-
       if(is.data.frame(rank_df) && "Treatment" %in% names(rank_df)) {
         if ("SUCRA" %in% names(rank_df)) {
           sorted <- rank_df %>% arrange(desc(SUCRA))
@@ -140,53 +289,85 @@ leagueTableServer <- function(id,
       return(get_original_order())
     })
 
-    # 按治疗名称排序
     get_name_order <- reactive({
       order <- get_original_order()
       sort(order)
     })
 
-    # 监听排序方式变化
-    observeEvent(input$sort_by, {
-      req(league_table_raw())
-      new_order <- switch(input$sort_by,
-                          "original" = get_original_order(),
-                          "sucra" = get_sucra_order(),
-                          "name" = get_name_order()
-      )
-      if(!is.null(new_order) && length(new_order) > 0) {
-        treatment_order(new_order)
+    # 动态生成拖拽 UI
+    output$custom_sort_ui <- renderUI({
+      req(input$sort_by == "custom")
+      trt <- get_original_order()
+      if (length(trt) == 0) return(NULL)
+      current_order <- isolate(input$custom_sort_list)
+      if (is.null(current_order) || !all(trt %in% current_order) || length(current_order) != length(trt)) {
+        current_order <- trt
       }
+      shinyjqui::orderInput(
+        inputId = session$ns("custom_sort_list"),
+        label = NULL,
+        items = current_order,
+        item_class = 'info',
+        width = "100%"
+      )
     })
 
-    # 重置顺序按钮
+    custom_order_dragged <- reactive({
+      if (input$sort_by != "custom") return(NULL)
+      res <- input$custom_sort_list
+      if (is.null(res) || length(res) == 0) return(get_original_order())
+      all_trt <- get_original_order()
+      res[res %in% all_trt]
+    })
+
+    # 最终治疗顺序
+    treatment_order <- reactive({
+      df <- league_table_raw()
+      req(df)
+      cur_trts <- get_original_order()
+
+      new_order <- switch(input$sort_by,
+                          "original" = cur_trts,
+                          "sucra"    = get_sucra_order(),
+                          "name"     = get_name_order(),
+                          "custom"   = {
+                            cd <- custom_order_dragged()
+                            if (is.null(cd) || length(cd) == 0) return(cur_trts)
+                            cd
+                          }
+      )
+
+      if (is.null(new_order) || length(new_order) == 0) {
+        return(cur_trts)
+      }
+      new_order <- c(new_order, setdiff(cur_trts, new_order))
+      new_order
+    })
+
+    # 重置按钮
     observeEvent(input$reset_order, {
-      treatment_order(get_original_order())
+      orig <- get_original_order()
+      if (input$sort_by == "custom") {
+        shinyjqui::updateOrderInput(session, "custom_sort_list", items = orig)
+      }
       updateSelectInput(session, "sort_by", selected = "original")
       showNotification("顺序已重置", type = "message", duration = 2)
     })
 
-    # 重新排序联赛表
+    observeEvent(get_original_order(), {
+      req(input$sort_by == "custom")
+      shinyjqui::updateOrderInput(session, "custom_sort_list", items = get_original_order())
+    }, ignoreInit = TRUE)
+
+    # ---------- 排序后的联赛表（支持对角线显示名称）----------
     reordered_league_table <- reactive({
       df <- league_table_raw()
       req(df)
 
       order <- treatment_order()
-      if(is.null(order)) {
-        order <- get_original_order()
-        treatment_order(order)
-      }
+      current_treatments <- get_original_order()
 
-      current_treatments <- as.character(df[[1]])
-
-      if(!all(current_treatments %in% order)) {
-        new_treatments <- current_treatments[!current_treatments %in% order]
-        order <- c(order, new_treatments)
-      }
-
-      order <- order[order %in% current_treatments]
-
-      mat_original <- as.matrix(df[, -1])
+      mat_original <- as.matrix(df[, -1, drop = FALSE])
       rownames(mat_original) <- current_treatments
       colnames(mat_original) <- current_treatments
 
@@ -196,125 +377,75 @@ leagueTableServer <- function(id,
         mat_reordered[lower.tri(mat_reordered)] <- ""
       }
 
-      diag(mat_reordered) <- "1 (ref)"
+      # 设置对角线：若勾选“对角线显示治疗名称”，则用治疗名称，否则用 “1 (ref)” 等
+      eff_type <- get_effect_type()
+      if (input$show_diag_names) {
+        diag(mat_reordered) <- order   # 直接用当前顺序的治疗名称
+      } else {
+        diag_val <- ifelse(eff_type %in% c("OR","RR","HR"), "1 (ref)", "0 (ref)")
+        diag(mat_reordered) <- diag_val
+      }
 
       df_reordered <- as.data.frame(mat_reordered, stringsAsFactors = FALSE)
       df_reordered <- cbind(Treatment = order, df_reordered)
       rownames(df_reordered) <- NULL
-
       return(df_reordered)
     })
 
-    # ========== 核心修复：显著性判断函数 ==========
-    is_cell_significant <- function(cell, eff_type) {
-      # 空单元格或对角线不判断
-      if (!is.character(cell) || cell == "1 (ref)" || cell == "" || is.na(cell)) {
-        return(FALSE)
-      }
-
-      # 检查是否包含置信区间格式
-      if (!grepl("\\([^,]+,\\s*[^)]+\\)", cell)) {
-        return(FALSE)
-      }
-
-      # 提取数值和置信区间（支持负数、科学计数法）
-      # 模式：数值 (下界, 上界)
-      pattern <- "(-?[0-9.]+(?:e[+-]?[0-9]+)?)\\s*\\((-?[0-9.]+(?:e[+-]?[0-9]+)?),\\s*(-?[0-9.]+(?:e[+-]?[0-9]+)?)\\)"
-      matches <- regmatches(cell, regexec(pattern, cell, perl = TRUE))
-
-      if (length(matches[[1]]) != 4) {
-        # 尝试简单模式
-        pattern2 <- "(-?[0-9.]+)\\s*\\((-?[0-9.]+),\\s*(-?[0-9.]+)\\)"
-        matches <- regmatches(cell, regexec(pattern2, cell, perl = TRUE))
-        if (length(matches[[1]]) != 4) {
-          return(FALSE)
-        }
-      }
-
-      # 提取上下界
-      lower <- suppressWarnings(as.numeric(matches[[1]][3]))
-      upper <- suppressWarnings(as.numeric(matches[[1]][4]))
-
-      if (is.na(lower) || is.na(upper)) {
-        return(FALSE)
-      }
-
-      # 根据效应类型判断
-      if (eff_type %in% c("OR", "RR", "HR")) {
-        # 区间不包含 1 为显著
-        # 使用容差避免浮点误差
-        tol <- 1e-10
-        contains_one <- (lower <= 1 + tol) && (upper >= 1 - tol)
-        return(!contains_one)
-      } else {
-        # RD / MD：区间不包含 0 为显著
-        # 关键：区间必须完全在 0 左侧或完全在 0 右侧
-        # 使用容差处理 -0.00 和 0.00
-        tol <- 1e-10
-        is_positive_side <- lower > tol      # 整个区间 > 0
-        is_negative_side <- upper < -tol     # 整个区间 < 0
-        return(is_positive_side || is_negative_side)
-      }
-    }
-
-    # 动态解读指南
+    # ---------- 动态解读指南（含对角线模式的提示）----------
     output$dynamic_guide <- renderUI({
-      eff_type <- effect_type()
+      eff_type <- get_effect_type()
       if (is.null(eff_type)) return(NULL)
 
+      diag_tip <- if (input$show_diag_names) {
+        div(style = "background-color: #d9edf7; padding: 8px; margin-bottom: 10px; border-left: 4px solid #31708f; border-radius: 4px;",
+            p(strong("ℹ️ 提示："), "当前已隐藏行名和列名，请直接查看对角线上的治疗名称来识别对应的行列。")
+        )
+      } else NULL
+
       if (eff_type %in% c("OR", "RR", "HR")) {
-        div(style = "background-color: #fcf8e3; padding: 12px; margin-bottom: 12px; border-left: 4px solid #f0ad4e; border-radius: 4px;",
-            p(strong("📌 快速解读指南："), style = "margin-bottom: 8px;"),
-            p("• ", strong("列 (比较组)"), " = 分子/实验组"),
-            p("• ", strong("行 (参照组)"), " = 分母/对照组"),
-            p("• ", strong("数值 < 1"), " 表示列治疗优于行治疗"),
-            p("• ", strong(span("红色加粗", style = "color: red;")), " 表示 95%CI 不包含 1（统计学显著）")
+        guide <- div(style = "background-color: #fcf8e3; padding: 12px; margin-bottom: 12px; border-left: 4px solid #f0ad4e; border-radius: 4px;",
+                     p(strong("📌 快速解读指南（OR / RR / HR）"), style = "margin-bottom: 8px;"),
+                     p("• 表中数字为 ", strong("比值比 (OR)"), "，已从 log OR 指数转换得到。"),
+                     p("• ", strong("列治疗 vs 行治疗"), "：数值 > 1 表示列治疗的事件（如 pCR）发生率更高；数值 < 1 表示列治疗的事件发生率更低。"),
+                     p("• ", strong("红色加粗"), " 表示 95% 可信区间不包含 1（统计学显著）。"),
+                     p("• ", strong("计算过程"), "：贝叶斯模型估计 log OR 的后验中位数和 95% 区间，然后取指数（exp）得到 OR。")
         )
       } else {
-        div(style = "background-color: #fcf8e3; padding: 12px; margin-bottom: 12px; border-left: 4px solid #f0ad4e; border-radius: 4px;",
-            p(strong("📌 快速解读指南："), style = "margin-bottom: 8px;"),
-            p("• ", strong("列 (比较组)"), " = 分子/实验组"),
-            p("• ", strong("行 (参照组)"), " = 分母/对照组"),
-            p("• ", strong("数值 < 0"), " 表示列治疗优于行治疗"),
-            p("• ", strong(span("红色加粗", style = "color: red;")), " 表示 95%CI 不包含 0（统计学显著）"),
-            p("• ", strong("注意"), "：区间如 (-0.22, -0.00) 包含 0，不标红")
+        guide <- div(style = "background-color: #fcf8e3; padding: 12px; margin-bottom: 12px; border-left: 4px solid #f0ad4e; border-radius: 4px;",
+                     p(strong("📌 快速解读指南（RD / MD）"), style = "margin-bottom: 8px;"),
+                     p("• 表中数字为 ", strong("均数差 (MD) 或风险差 (RD)")),
+                     p("• ", strong("列治疗 vs 行治疗"), "：数值 > 0 表示列治疗效果更优；数值 < 0 表示行治疗效果更优。"),
+                     p("• ", strong("红色加粗"), " 表示 95% 可信区间不包含 0（统计学显著）。")
         )
       }
+
+      tagList(diag_tip, guide)
     })
 
-    # 渲染联赛表
+    # ---------- DT 表格输出（根据勾选隐藏行列标题）----------
     output$table <- renderDT({
       df <- reordered_league_table()
       req(df)
 
-      eff_type <- effect_type()
-      if (is.null(eff_type)) eff_type <- "OR"
+      eff_type <- get_effect_type()
 
       row_names <- as.character(df[[1]])
       data_matrix <- df[, -1, drop = FALSE]
 
-      n_rows <- nrow(data_matrix)
-      n_cols <- ncol(data_matrix)
-
-      # 预先计算每个单元格的显著性
-      signif_matrix <- matrix(FALSE, nrow = n_rows, ncol = n_cols)
-      for(i in 1:n_rows) {
-        for(j in 1:n_cols) {
-          cell <- data_matrix[i, j]
-          if(cell != "" && cell != "1 (ref)") {
-            signif_matrix[i, j] <- is_cell_significant(cell, eff_type)
-          }
-        }
+      # 根据“对角线显示治疗名称”决定是否隐藏行列标题
+      if (input$show_diag_names) {
+        rownames_arg <- FALSE
+        colnames_arg <- rep("", ncol(data_matrix))   # 空字符串作为列标题
+      } else {
+        rownames_arg <- row_names
+        colnames_arg <- row_names
       }
 
-      # 调试：打印显著单元格数量
-      cat("显著单元格数量:", sum(signif_matrix), "/", n_rows * n_cols, "\n")
-
-      # 创建 DT 表格
       dt <- datatable(
         data_matrix,
-        rownames = row_names,
-        colnames = row_names,
+        rownames = rownames_arg,
+        colnames = colnames_arg,
         options = list(
           pageLength = 50,
           scrollX = TRUE,
@@ -327,63 +458,108 @@ leagueTableServer <- function(id,
         )
       )
 
-      # JS 实现真正的“单元格级”高亮
-      dt <- dt %>% formatStyle(
-        columns = colnames(data_matrix),
-        valueColumns = colnames(data_matrix),
-        backgroundColor = styleEqual("", "white") # 占位
+      # JS 回调：跳过对角线，使用统一的显著性条件
+      js_code <- sprintf(
+        "function(row, data, index) {
+          for (var j = 0; j < data.length; j++) {
+            if (j === index) continue;
+            var cell = data[j];
+            if (!cell || cell === '') continue;
+            var match = cell.match(/\\((-?[0-9.]+),\\s*(-?[0-9.]+)\\)/);
+            if (!match) continue;
+            var lower = parseFloat(match[1]);
+            var upper = parseFloat(match[2]);
+            var isSignif = %s;
+            if (isSignif) {
+              $('td:eq(' + j + ')', row).css({'color': 'red', 'font-weight': 'bold'});
+            }
+          }
+        }",
+        signif_cond_text()
       )
 
-      # 用 JS override
-      dt$x$options$rowCallback <- JS(
-        "function(row, data, index) {",
-        "  for (var j = 0; j < data.length; j++) {",
-        "    var cell = data[j];",
-        "",
-        "    // 跳过空值和对角线",
-        "    if (!cell || cell === '1 (ref)') continue;",
-        "",
-        "    var match = cell.match(/\\((-?[0-9.]+),\\s*(-?[0-9.]+)\\)/);",
-        "    if (!match) continue;",
-        "",
-        "    var lower = parseFloat(match[1]);",
-        "    var upper = parseFloat(match[2]);",
-        "",
-        "    var isSignif = false;",
-        "",
-        if (effect_type() %in% c("OR","RR","HR")) {
-          "    isSignif = !(lower <= 1 && upper >= 1);"
-        } else {
-          "    isSignif = (lower > 0 || upper < 0);"
-        },
-        "",
-        "    if (isSignif) {",
-        "      $('td:eq(' + j + ')', row).css({'color': 'red', 'font-weight': 'bold'});",
-        "    }",
-        "  }",
-        "}"
-      )
-
+      dt$x$options$rowCallback <- JS(js_code)
       dt
     })
 
-    # 下载功能
+    # ---------- Excel 下载 ----------
     output$download <- downloadHandler(
-      filename = function() paste0("league_table_", Sys.Date(), ".csv"),
+      filename = function() {
+        paste0("league_table_", Sys.Date(), ".xlsx")
+      },
       content = function(file) {
         df <- reordered_league_table()
-        if (is.null(df)) {
-          write.csv(data.frame(Message = "No league table available"), file, row.names = FALSE)
-        } else {
-          write.csv(df, file, row.names = FALSE)
+        if (is.null(df) || nrow(df) == 0) {
+          wb <- createWorkbook()
+          addWorksheet(wb, "Empty")
+          writeData(wb, "Empty", data.frame(Message = "未生成联赛表"))
+          saveWorkbook(wb, file, overwrite = TRUE)
+          return()
         }
+
+        eff_type <- get_effect_type()
+        wb <- createWorkbook()
+
+        # --- Sheet 1: League Table ---
+        addWorksheet(wb, "League Table")
+        writeData(wb, sheet = "League Table", x = df, startCol = 1, startRow = 1,
+                  rowNames = FALSE, colNames = TRUE)
+
+        boldRedStyle <- createStyle(fontColour = "#FF0000", textDecoration = "bold")
+
+        n_row <- nrow(df)
+        n_col <- ncol(df)
+        if (n_col >= 2) {
+          for (r in 1:n_row) {
+            for (c in 2:n_col) {
+              # 跳过对角线单元格（Excel 中行 r（数据行，从第2行开始）对应关系：r+1 == c 时为对角线）
+              if (r == c - 1) next
+              cell_value <- as.character(df[r, c])
+              if (is_significant_cell(cell_value, eff_type)) {
+                addStyle(wb, sheet = "League Table", style = boldRedStyle,
+                         rows = r + 1, cols = c, gridExpand = TRUE)
+              }
+            }
+          }
+        }
+        setColWidths(wb, sheet = "League Table", cols = 1:n_col, widths = "auto")
+
+        # --- Sheet 2: Model Info ---
+        addWorksheet(wb, "Model Info")
+        res <- nma_result()
+        method_text <- if (is.null(res)) "Unknown" else {
+          paste(res$method_family, nma_method(), sep = " / ")
+        }
+        info_df <- data.frame(
+          Item = c("效应量", "模型方法", "排序方式", "显示下三角", "对角线显示治疗名称", "生成时间"),
+          Value = c(
+            eff_type,
+            method_text,
+            input$sort_by,
+            ifelse(input$show_lower_tri, "是", "否"),
+            ifelse(input$show_diag_names, "是", "否"),
+            as.character(Sys.time())
+          ),
+          stringsAsFactors = FALSE
+        )
+        writeData(wb, sheet = "Model Info", x = info_df, startCol = 1, startRow = 1,
+                  rowNames = FALSE, colNames = TRUE)
+        setColWidths(wb, sheet = "Model Info", cols = 1:2, widths = c(20, 40))
+
+        saveWorkbook(wb, file, overwrite = TRUE)
       }
     )
 
-    # 详细解读指南（包含上下三角解释）
+    # ---------- 详细解读弹窗 ----------
     observeEvent(input$show_guide, {
-      eff_type <- effect_type()
+      eff_type <- get_effect_type()
       invalid_line <- ifelse(eff_type %in% c("OR", "RR", "HR"), "1", "0")
+      measure_label <- switch(eff_type,
+                              OR = "OR",
+                              RR = "RR",
+                              RD = "RD",
+                              HR = "HR",
+                              eff_type)
 
       showModal(modalDialog(
         title = "📘 联赛表详细解读指南",
@@ -395,15 +571,11 @@ leagueTableServer <- function(id,
           p("上三角方向：", strong("列治疗 vs 行治疗")),
           p("• 列 = 比较组（实验组）"),
           p("• 行 = 参照组（对照组）"),
-
           h5("2. 红色加粗的含义"),
-          p(strong(span("红色加粗", style = "color: red;")), "表示该比较具有统计学显著性"),
-          p("判断标准：95% 置信区间", strong(span(paste0("不包含 ", invalid_line), style = "color: red;"))),
-
+          p(strong(span("红色加粗", style = "color: red;")), paste0("表示该比较具有统计学显著性（", measure_label, " 的 95%CI 不包含 ", invalid_line, "）")),
           h5("3. RD 的特殊说明"),
           p("• 区间 (-0.22, -0.00) 包含 0，", strong("不标红")),
           p("• 区间 (-0.25, -0.05) 不包含 0，", strong(span("标红", style = "color: red;"))),
-
           h5("4. 上下三角关系"),
           if(eff_type %in% c("OR", "RR", "HR")) {
             p("下三角 = 1 / 上三角")
@@ -411,7 +583,6 @@ leagueTableServer <- function(id,
             p("下三角 = - 上三角")
           },
           p("显著性在上下三角中一致。"),
-
           h5("5. 示例"),
           if(eff_type %in% c("OR", "RR", "HR")) {
             tags$pre("
