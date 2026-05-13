@@ -1,0 +1,1038 @@
+# modules/network_meta_module.R
+# 完整的网络荟萃分析模块（已修复所有已知问题）
+
+library(shiny)
+library(DT)
+library(dplyr)
+library(tidyr)
+library(coda)
+
+if (!requireNamespace("NMA", quietly = TRUE)) {
+  stop("请安装 NMA 包：install.packages('NMA')")
+}
+if (!requireNamespace("gemtc", quietly = TRUE)) {
+  stop("请安装 gemtc 包：install.packages('gemtc')")
+}
+if (!requireNamespace("coda", quietly = TRUE)) {
+  stop("请安装 coda 包：install.packages('coda')")
+}
+
+library(NMA)
+source("modules/sucra_ranking_diagram_module.R", local = TRUE)
+source("modules/league_table_module.R")
+
+# ========== 统一的治疗名称清洗函数 ==========
+clean_treatment_unified <- function(x) {
+  x <- as.character(x)
+  x <- gsub("[^A-Za-z0-9_]", "_", x)
+  x <- gsub("_+", "_", x)
+  x <- gsub("^_|_$", "", x)
+  trimws(x)
+}
+
+# ========== 频率学派 NMA 核心函数 ==========
+run_nma_frequentist <- function(nd, ref_trt, method_choice) {
+  method <- switch(method_choice,
+                   freq_REML = "REML",
+                   freq_fixed = "fixed",
+                   freq_NH = "NH",
+                   "REML")
+
+  nd$data$trt <- clean_treatment_unified(nd$data$trt)
+  ref_trt <- clean_treatment_unified(ref_trt)
+
+  if (nd$type == "binary") {
+    setup_obj <- tryCatch({
+      NMA::setup(study = study, trt = trt, d = d, n = n,
+                 measure = nd$measure, ref = ref_trt, data = nd$data)
+    }, error = function(e) {
+      showNotification(paste("频率学派 setup 失败：", e$message), type = "error")
+      return(NULL)
+    })
+    if (is.null(setup_obj)) return(NULL)
+
+    res <- tryCatch({
+      NMA::nma(setup_obj, method = method, eform = (nd$measure != "RD"))
+    }, error = function(e) {
+      showNotification(paste("频率学派 NMA 运行失败：", e$message), type = "error")
+      return(NULL)
+    })
+    if (is.null(res)) return(NULL)
+
+    return(list(result = res, setup = setup_obj, type = "binary",
+                measure = nd$measure, method_family = "frequentist"))
+  } else {  # survival
+    setup_obj <- tryCatch({
+      NMA::setup(study = study, trt = trt, d = d, n = n,
+                 measure = nd$measure, ref = ref_trt, data = nd$data)
+    }, error = function(e) {
+      showNotification(paste("频率学派 setup 失败：", e$message), type = "error")
+      return(NULL)
+    })
+    if (is.null(setup_obj)) return(NULL)
+
+    res <- tryCatch({
+      NMA::nma(setup_obj, method = method, eform = TRUE)
+    }, error = function(e) {
+      showNotification(paste("频率学派 NMA 运行失败：", e$message), type = "error")
+      return(NULL)
+    })
+    if (is.null(res)) return(NULL)
+
+    return(list(result = res, setup = setup_obj, type = "survival",
+                measure = nd$measure, method_family = "frequentist"))
+  }
+}
+
+# ========== 贝叶斯 NMA 核心函数 ==========
+run_nma_bayesian <- function(nd, ref_trt, method_choice, raw_data=NULL) {
+
+
+
+
+
+  if (method_choice == "bayes_fixed") {
+    linearModel <- "fixed"
+  } else {
+    linearModel <- "random"
+  }
+
+  ref_trt <- clean_treatment_unified(ref_trt)
+
+  # ---- 根据数据类型构造 gemtc 所需输入 ----
+  if (nd$type == "binary") {
+    nd$data$trt <- clean_treatment_unified(nd$data$trt)
+    if (!all(c("d", "n") %in% names(nd$data))) {
+      showNotification("二分类数据缺少 d (事件数) 或 n (样本量)", type = "error")
+      return(NULL)
+    }
+    data_ab <- nd$data %>%
+      transmute(
+        study = as.character(study),
+        treatment = trt,
+        responders = round(d),
+        sampleSize = round(n)
+      ) %>%
+      dplyr::filter(
+        !is.na(treatment),
+        !is.na(responders), !is.na(sampleSize),
+        responders >= 0, sampleSize > 0,
+        responders <= sampleSize
+      )
+    likelihood <- "binom"
+    link <- "logit"
+
+    # 参照治疗检查
+    treatments_present <- unique(data_ab$treatment)
+    if (length(treatments_present) < 2) {
+      showNotification("至少需要两个治疗组", type = "error")
+      return(NULL)
+    }
+    if (!(ref_trt %in% treatments_present)) {
+      ref_trt <- treatments_present[1]
+      showNotification(paste("指定的参考治疗不存在，已自动使用:", ref_trt), type = "warning")
+    }
+
+    treatments_df <- data.frame(
+      id = treatments_present,
+      description = treatments_present,
+      stringsAsFactors = FALSE
+    )
+
+
+
+    network <- tryCatch(
+      gemtc::mtc.network(data.ab = data_ab, treatments = treatments_df),
+      error = function(e) {
+        showNotification(paste("网络构建失败：", e$message), type = "error")
+        return(NULL)
+      }
+    )
+    if (is.null(network)) return(NULL)
+
+  } else if (nd$type == "survival") {
+    if (is.null(nd$bayesian_data)) {
+      showNotification("生存数据缺少贝叶斯所需对比数据 (treatment1, treatment2, diff, std.err)", type = "error")
+      return(NULL)
+    }
+
+
+    #### 构建treatments_df
+
+
+    data_ab <- nd$data %>%
+      transmute(
+        study = as.character(study),
+        treatment = trt,
+        responders = round(d),
+        sampleSize = round(n)
+      ) %>%
+      dplyr::filter(
+        !is.na(treatment),
+        !is.na(responders),
+        !is.na(sampleSize),
+        responders >= 0,
+        sampleSize > 0,
+        responders <= sampleSize
+      )
+
+
+    treatments_present <- unique(data_ab$treatment)
+    if (length(treatments_present) < 2) {
+      showNotification("至少需要两个治疗", type = "error")
+      return(NULL)
+    }
+
+
+    treatments_df <- data.frame(
+      id = treatments_present,
+      description = treatments_present,
+      stringsAsFactors = FALSE
+    )
+    #### 构建treatments_df end
+
+
+    #dat<-current_data()
+    dat<-raw_data
+    print(dat)
+
+    #unique_id            study_display            te se_te    n1    n2 is_synthetic
+    #<chr>                <chr>                 <dbl> <dbl> <dbl> <dbl> <lgl>
+    #  1 AEGEAN-2023-1        AEGEAN (2023)        -0.381 0.129   366   374 FALSE
+    #2 CheckMate 816-2022-1 CheckMate 816 (2022) -0.469 0.168   179   179 FALSE
+    #3 KEYNOTE-671-2023-1   KEYNOTE-671 (2023)   -0.553 0.114   397   400 FALSE
+    #4 NEOTORCH-2024-1      NEOTORCH (2024)      -0.918 0.181   202   202 FALSE
+
+    # 确保 te 和 se_te 已提供（这是对数风险比及其标准误）
+    # 如果缺失 se_te，可从 hr, hr_lci, hr_uci 计算：
+    if(any(is.na(dat$se_te))) {
+      # 近似法：se_te = (log(hr_uci) - log(hr_lci)) / (2 * 1.96)
+      dat$se_te <- (log(dat$hr_uci) - log(dat$hr_lci)) / (2 * qnorm(0.975))
+    }
+    if(any(is.na(dat$te))) {
+      dat$te <- log(dat$hr)
+    }
+
+    # =============================
+    # 4. 构建 mtc.network 所需的 data.re 格式
+    # =============================
+    # data.re 格式要求：每一行是一个研究的一个臂，包含：
+    #   study（字符型，研究ID）
+    #   treatment（字符型，治疗ID）
+    #   diff（数值，相对于基线臂的效应差值，基线臂为 NA）
+    #   std.err（数值，差值的标准误，基线臂为 NA，但多臂研究需设置基线臂的 std.err）
+
+    # 当前数据为两臂研究，每行代表一个比较 treat1 vs treat2
+    # 将每个比较重塑为两行：实验臂和基线臂
+    study_list <- list()
+    for (i in 1:nrow(dat)) {
+      study_id <- dat$study_display[i]
+      t1 <- dat$treat1[i]
+      t2 <- dat$treat2[i]
+      te_val <- as.numeric(dat$te[i])       # 确保数值
+      se_val <- as.numeric(dat$se_te[i])    # 确保数值
+
+      baseline <- data.frame(
+        study = study_id,
+        treatment = t2,
+        diff = NA_real_,
+        std.err = NA_real_,
+        stringsAsFactors = FALSE
+      )
+      experimental <- data.frame(
+        study = study_id,
+        treatment = t1,
+        diff = te_val,
+        std.err = se_val,
+        stringsAsFactors = FALSE
+      )
+      study_list[[i]] <- rbind(baseline, experimental)
+    }
+
+    data_re <- do.call(rbind, study_list)
+    # 再次强制确保数值型（应对可能的意外）
+    data_re$diff <- as.numeric(data_re$diff)
+    data_re$std.err <- as.numeric(data_re$std.err)
+    rownames(data_re) <- NULL
+
+
+
+
+    network <- tryCatch(
+      gemtc::mtc.network(data.re = data_re),
+      error = function(e) {
+        showNotification(paste("网络构建失败 (data.re)：", e$message), type = "error")
+        return(NULL)
+      }
+    )
+    print(network)
+    if (is.null(network)) return(NULL)
+
+    likelihood <- "normal"
+    link <- "identity"
+
+  } else {
+    showNotification(paste("不支持的数据类型:", nd$type), type = "error")
+    return(NULL)
+  }
+
+  # 构建模型
+  model <- tryCatch({
+    if (linearModel == "random") {
+      hy.prior <- gemtc::mtc.hy.prior("std.dev", "dunif", 0, 5)
+      gemtc::mtc.model(
+        network,
+        type = "consistency",
+        likelihood = likelihood,
+        link = link,
+        linearModel = "random",
+        n.chain = 4,
+        hy.prior = hy.prior
+      )
+    } else {
+      gemtc::mtc.model(
+        network,
+        type = "consistency",
+        likelihood = likelihood,
+        link = link,
+        linearModel = "fixed",
+        n.chain = 4
+      )
+    }
+  }, error = function(e) {
+    showNotification(paste("模型创建失败：", e$message), type = "error")
+    return(NULL)
+  })
+  if (is.null(model)) return(NULL)
+
+  # 运行 MCMC
+  result <- tryCatch(
+    gemtc::mtc.run(
+      model,
+      sampler = "rjags",
+      n.adapt = 5000,
+      n.iter = 25000,
+      thin = 5
+    ),
+    error = function(e) {
+      showNotification(paste("MCMC 运行失败：", e$message), type = "error")
+      return(NULL)
+    }
+  )
+  if (is.null(result)) return(NULL)
+
+  list(
+    result = list(
+      model = result,
+      network = network,
+      ref_trt = ref_trt,
+      treatments_df = treatments_df,
+      linearModel = linearModel
+    ),
+    setup = list(data = if (nd$type == "binary") data_ab else data_re),
+    type = nd$type,
+    measure = if (nd$type == "binary") nd$measure else "HR",
+    method_family = "bayesian"
+  )
+}
+
+# （保留旧版备用，但已不再调用）
+run_nma_bayesian_old <- function(nd, ref_trt, method_choice) {
+  if (method_choice == "bayes_fixed") linearModel <- "fixed" else linearModel <- "random"
+  nd$data$trt <- clean_treatment_unified(nd$data$trt)
+  ref_trt <- clean_treatment_unified(ref_trt)
+  if (nd$type != "binary") {
+    showNotification("旧版贝叶斯仅支持二分类数据", type = "error")
+    return(NULL)
+  }
+  if (nd$measure == "RD") {
+    showNotification("⚠️ 贝叶斯 NMA 不支持 RD，已自动切换为 OR", type = "warning")
+    nd$measure <- "OR"
+  }
+  data_ab <- nd$data %>%
+    transmute(study = as.character(study), treatment = trt,
+              responders = round(d), sampleSize = round(n)) %>%
+    dplyr::filter(!is.na(treatment), !is.na(responders), !is.na(sampleSize),
+                  responders >= 0, sampleSize > 0, responders <= sampleSize)
+  treatments_present <- unique(data_ab$treatment)
+  if (length(treatments_present) < 2) {
+    showNotification("至少需要两个治疗", type = "error")
+    return(NULL)
+  }
+  if (!(ref_trt %in% treatments_present)) ref_trt <- treatments_present[1]
+  treatments_df <- data.frame(id = treatments_present, description = treatments_present,
+                              stringsAsFactors = FALSE)
+  network <- tryCatch(gemtc::mtc.network(data.ab = data_ab, treatments = treatments_df),
+                      error = function(e) { showNotification(paste("网络构建失败：", e$message), type = "error"); return(NULL) })
+  if (is.null(network)) return(NULL)
+  model <- tryCatch({
+    if (linearModel == "random") {
+      gemtc::mtc.model(network, type = "consistency", likelihood = "binom", link = "logit",
+                       linearModel = "random", n.chain = 4,
+                       hy.prior = gemtc::mtc.hy.prior("std.dev", "dunif", 0, 5))
+    } else {
+      gemtc::mtc.model(network, type = "consistency", likelihood = "binom", link = "logit",
+                       linearModel = "fixed", n.chain = 4)
+    }}, error = function(e) { showNotification(paste("模型失败：", e$message), type = "error"); return(NULL) })
+  if (is.null(model)) return(NULL)
+  result <- tryCatch(gemtc::mtc.run(model, sampler = "rjags", n.adapt = 5000, n.iter = 25000, thin = 5),
+                     error = function(e) { showNotification(paste("MCMC失败：", e$message), type = "error"); return(NULL) })
+  if (is.null(result)) return(NULL)
+  list(result = list(model = result, network = network, ref_trt = ref_trt,
+                     treatments_df = treatments_df, linearModel = linearModel),
+       setup = list(data = data_ab), type = nd$type, measure = nd$measure, method_family = "bayesian")
+}
+
+# ===================== UI 模块 =====================
+networkMetaUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    h3("网络荟萃分析 (Network Meta-Analysis)"),
+    div(
+      class = "well",
+      style = "background-color: #d9edf7; padding: 15px; margin-bottom: 15px; border-left: 4px solid #5cb85c;",
+      h5("🔧 治疗组列映射（列选即生效）", style = "color: #3c763d; margin-top: 0;"),
+      fluidRow(
+        column(5, uiOutput(ns("exp_col_ui"))),
+        column(5, uiOutput(ns("comp_col_ui")))
+      ),
+      p(class = "text-muted", style = "margin-bottom: 0; margin-top: 8px;",
+        "💡 提示：选择后自动更新治疗组列表，无需额外确认。")
+    ),
+    fluidRow(
+      column(3, selectInput(ns("nma_method"), "估计方法",
+                            choices = c(
+                              "频率学派 - REML" = "freq_REML",
+                              "频率学派 - 固定效应" = "freq_fixed",
+                              "频率学派 - 随机效应 (NH)" = "freq_NH",
+                              "贝叶斯 - 固定效应" = "bayes_fixed",
+                              "贝叶斯 - 随机效应" = "bayes_random"
+                            ),
+                            selected = "freq_REML")),
+      column(3, uiOutput(ns("ref_trt_ui"))),
+      column(3, uiOutput(ns("measure_ui"))),
+      column(3, br(), actionButton(ns("run_nma"), "运行网络分析",
+                                   icon = icon("play"), class = "btn-primary"))
+    ),
+    fluidRow(
+      column(3, checkboxInput(ns("show_pop_size"), "在节点上显示样本量", value = TRUE)),
+      column(9, textOutput(ns("nma_status")))
+    ),
+    hr(),
+    h4("预处理数据"),
+    uiOutput(ns("data_type_hint")),
+    DTOutput(ns("pretable")),
+    hr(),
+    h4("网络结构图 (Network Graph)"),
+    plotOutput(ns("netplot"), height = "500px"),
+    br(),
+    conditionalPanel(
+      condition = "input.nma_method == 'bayes_fixed' || input.nma_method == 'bayes_random'",
+      ns = ns,
+      h4("MCMC 诊断图 (Trace & Density)"),
+      p("标准 gemtc 诊断图（包含 trace 和 density）。", style = "color: #31708f;"),
+      uiOutput(ns("bayes_diag_plots")),
+      br(),
+      verbatimTextOutput(ns("bayes_params_info"))
+    ),
+    br(),
+    h4("NMA 森林图 (Forest Plot)"),
+    plotOutput(ns("nmaforest"), height = "600px"),
+    br(),
+    h4("分析结果摘要"),
+    verbatimTextOutput(ns("nma_summary")),
+    hr(),
+    h4("治疗排名 (SUCRA)"),
+    rankDiagramUI(ns("rank_diagram")),   # 新增独立的排名图模块
+    uiOutput(ns("rank_output_ui")),      # 保留原有排名表格
+    hr(),
+    leagueTableUI(ns("league_table")),
+    hr(),
+    h4("原始输入数据预览"),
+    DTOutput(ns("data_table"))
+  )
+}
+
+# ===================== Server 模块 =====================
+networkMetaServer <- function(id, data_type, outcome, selected_studies, current_data, studies_info) {
+  moduleServer(id, function(input, output, session) {
+
+    col_mapping <- reactiveValues(exp_col = NULL, comp_col = NULL)
+
+    # ---------- 列检测函数 ----------
+    detect_exp_columns <- reactive({
+      req(studies_info)
+      all_cols <- names(studies_info)
+      patterns <- c("^Experimental$", "^experimental$", "^treat1$",
+                    "^Experimental_Test_\\d+$", "^Exp_\\d+$", "^Treatment$", "^Intervention$")
+      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
+      if (length(matched) == 0) matched <- all_cols
+      matched
+    })
+
+    detect_comp_columns <- reactive({
+      req(studies_info)
+      all_cols <- names(studies_info)
+      patterns <- c("^Comparator$", "^comparator$", "^treat2$",
+                    "^Comparator_Test_\\d+$", "^Comp_\\d+$", "^Control$", "^Placebo$")
+      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
+      if (length(matched) == 0) matched <- all_cols
+      matched
+    })
+
+    output$exp_col_ui <- renderUI({
+      req(studies_info)
+      exp_options <- detect_exp_columns()
+      default_exp <- if ("Experimental" %in% exp_options) "Experimental"
+      else if ("experimental" %in% exp_options) "experimental"
+      else if ("treat1" %in% exp_options) "treat1"
+      else exp_options[1]
+      selectInput(session$ns("selected_exp_col"), label = tagList(icon("flask"), "Experimental 列 (治疗组)"),
+                  choices = exp_options, selected = default_exp)
+    })
+
+    output$comp_col_ui <- renderUI({
+      req(studies_info)
+      comp_options <- detect_comp_columns()
+      default_comp <- if ("Comparator" %in% comp_options) "Comparator"
+      else if ("comparator" %in% comp_options) "comparator"
+      else if ("treat2" %in% comp_options) "treat2"
+      else comp_options[1]
+      selectInput(session$ns("selected_comp_col"), label = tagList(icon("chart-line"), "Comparator 列 (对照组)"),
+                  choices = comp_options, selected = default_comp)
+    })
+
+    # 列映射自动更新（无需按钮）
+    observe({
+      req(input$selected_exp_col, input$selected_comp_col)
+      col_mapping$exp_col <- input$selected_exp_col
+      col_mapping$comp_col <- input$selected_comp_col
+    })
+
+    # ---------- 治疗名称列表（基于选定的列）----------
+    all_treatments <- reactive({
+      req(selected_studies(), col_mapping$exp_col, col_mapping$comp_col)
+      studies_filtered <- studies_info %>%
+        dplyr::filter(unique_id %in% selected_studies()) %>%
+        dplyr::select(!!sym(col_mapping$exp_col), !!sym(col_mapping$comp_col))
+      treat_vec <- unique(c(studies_filtered[[1]], studies_filtered[[2]]))
+      treat_vec <- treat_vec[!is.na(treat_vec)]
+      treat_vec <- clean_treatment_unified(treat_vec)
+      if (length(treat_vec) == 0) return(NULL)
+      return(treat_vec)
+    })
+
+    # 实际出现在 NMA 数据中的治疗（用于参考治疗选择）
+    available_ref_trts <- reactive({
+      nd <- nma_data()
+      req(nd)
+      if (nd$type == "binary") {
+        unique(nd$data$trt)
+      } else {
+        if (startsWith(input$nma_method, "bayes_") && !is.null(nd$bayesian_data)) {
+          unique(c(nd$bayesian_data$treatment1, nd$bayesian_data$treatment2))
+        } else {
+          unique(nd$data$trt)
+        }
+      }
+    })
+
+    output$ref_trt_ui <- renderUI({
+      trts <- available_ref_trts()
+      if (is.null(trts) || length(trts) == 0) return(p("暂无可用治疗"))
+      default_ref <- if ("Chemotherapy" %in% trts) "Chemotherapy" else trts[1]
+      selectInput(session$ns("ref_trt"), "参考治疗", choices = trts, selected = default_ref)
+    })
+
+    output$measure_ui <- renderUI({
+      if (data_type() == "binary") {
+        selectInput(session$ns("binary_measure"), "效应指标 (二分类)",
+                    choices = c("风险差 (RD)" = "RD", "风险比 (OR)" = "OR", "相对风险 (RR)" = "RR"),
+                    selected = "RD")
+      } else NULL
+    })
+
+    nma_result_val <- reactiveVal(NULL)
+    last_run_studies <- reactiveVal(NULL)
+
+    observeEvent(
+      list(selected_studies(), col_mapping$exp_col, col_mapping$comp_col,
+           data_type(), input$binary_measure),
+      {
+        if (!is.null(nma_result_val())) {
+          nma_result_val(NULL)
+          last_run_studies(NULL)
+          showNotification("⚠️ 研究选择或数据设置已改变，之前 NMA 结果已清空，请重新运行",
+                           type = "warning", duration = 5)
+        }
+      },
+      ignoreNULL = FALSE, ignoreInit = TRUE
+    )
+
+    # ---------- 数据预处理 ----------
+    output$data_type_hint <- renderUI({
+      if (data_type() == "binary") {
+        p("二分类数据：长格式 (study, trt, d, n)")
+      } else {
+        if (startsWith(input$nma_method, "bayes_")) {
+          p("生存数据 (贝叶斯)：对比数据 (study, treat1, treat2, logHR, SE)")
+        } else {
+          p("生存数据 (频率学派)：trans.armdata 转换后的长格式 (study, trt, d, n)")
+        }
+      }
+    })
+
+    output$data_table <- renderDT({
+      dat <- current_data()
+      req(dat)
+      if (nrow(dat) == 0) return(NULL)
+      datatable(dat, options = list(pageLength = 10, scrollX = TRUE), rownames = FALSE)
+    })
+
+    treat_info <- reactive({
+      req(studies_info, col_mapping$exp_col, col_mapping$comp_col)
+      exp_col <- col_mapping$exp_col
+      comp_col <- col_mapping$comp_col
+      if (!(exp_col %in% names(studies_info)) || !(comp_col %in% names(studies_info))) {
+        showNotification("选定的列不存在于数据中", type = "error")
+        return(NULL)
+      }
+      result <- studies_info %>%
+        dplyr::select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
+        dplyr::distinct(unique_id, .keep_all = TRUE)
+      result
+    })
+
+    nma_data <- reactive({
+      req(current_data(), treat_info())
+      study_ids <- selected_studies()
+      if (is.null(study_ids) || length(study_ids) < 2) {
+        showNotification("至少需要选择 2 项研究", type = "warning")
+        return(NULL)
+      }
+      dat <- current_data()
+      if (!is.data.frame(dat)) {
+        if (is.list(dat) && !is.null(dat$data.ab) && is.data.frame(dat$data.ab)) dat <- dat$data.ab
+        else if (is.list(dat) && !is.null(dat$data) && is.data.frame(dat$data)) dat <- dat$data
+        else dat <- tryCatch(as.data.frame(dat), error = function(e) NULL)
+      }
+      req(is.data.frame(dat))
+      dat <- dat %>% dplyr::filter(unique_id %in% study_ids)
+      if (nrow(dat) < 2) {
+        showNotification("至少需要 2 项研究的数据", type = "error")
+        return(NULL)
+      }
+      info <- treat_info()
+      # 优先使用 current_data() 中已有的 treat1/treat2 列
+      if (!("treat1" %in% names(dat)) | !("treat2" %in% names(dat))) {
+        info <- treat_info()
+        dat <- dat %>% left_join(info, by = "unique_id")
+      }
+      dat <- dat %>% dplyr::filter(!is.na(treat1) & !is.na(treat2))
+
+
+      if (nrow(dat) == 0) {
+        showNotification("合并治疗信息后无有效数据", type = "error")
+        return(NULL)
+      }
+
+      if (data_type() == "binary") {
+        long_data <- bind_rows(
+          dat %>% transmute(study = study_display, trt = treat1, n = n_ici, d = event_ici),
+          dat %>% transmute(study = study_display, trt = treat2, n = n_ctrl, d = event_ctrl)
+        ) %>% dplyr::filter(!is.na(trt), !is.na(n), !is.na(d), n > 0, d >= 0, d <= n)
+        long_data$trt <- clean_treatment_unified(long_data$trt)
+        if (nrow(long_data) == 0) {
+          showNotification("二分类数据转换后无有效记录", type = "error")
+          return(NULL)
+        }
+        list(type = "binary", data = long_data, measure = input$binary_measure)
+      } else {
+        # 生存数据分支
+        if (!all(c("te", "se_te", "n1", "n2") %in% names(dat))) {
+          showNotification("生存数据缺少 te, se_te, n1, n2 列", type = "error")
+          return(NULL)
+        }
+        dat <- dat %>% dplyr::filter(!is.na(te) & !is.na(se_te) & is.finite(te) & is.finite(se_te))
+        if (nrow(dat) == 0) {
+          showNotification("生存数据中存在无效的 te 或 seTE", type = "error")
+          return(NULL)
+        }
+
+        # 1. 频率学派所需的 trans.armdata 数据
+        trans_data <- tryCatch({
+          NMA::trans.armdata(
+            study = study_display, treat1 = treat1, treat2 = treat2,
+            n1 = n1, n2 = n2, y = te, SE = se_te, measure = "logHR", data = dat
+          )
+        }, error = function(e) {
+          showNotification(paste("trans.armdata 转换失败：", e$message), type = "error")
+          NULL
+        })
+        if (is.null(trans_data)) return(NULL)
+        trans_data$trt <- clean_treatment_unified(trans_data$trt)
+
+        # 2. 贝叶斯所需的对比数据
+        bayesian_data <- dat %>%
+          transmute(
+            study      = study_display,
+            treatment1 = clean_treatment_unified(treat1),
+            treatment2 = clean_treatment_unified(treat2),
+            diff       = te,          # 效应差异 (logHR)
+            std.err    = se_te        # 标准误
+          ) %>%
+          dplyr::filter(
+            !is.na(treatment1), !is.na(treatment2),
+            !is.na(diff), !is.na(std.err),
+            std.err > 0,
+            is.finite(diff), is.finite(std.err),
+            treatment1 != treatment2   # 排除自比较
+          )
+
+
+        if (nrow(bayesian_data) < 2) {
+          showNotification("贝叶斯对比数据不足，需要至少2个有效研究", type = "error")
+          return(NULL)
+        }
+
+        list(
+          type = "survival",
+          data = trans_data,
+          bayesian_data = bayesian_data,
+          measure = "HR"
+        )
+      }
+    })
+
+    output$pretable <- renderDT({
+      nd <- nma_data()
+      req(nd)
+      # 根据方法选择展示的数据
+      if (nd$type == "survival" && startsWith(input$nma_method, "bayes_")) {
+        df <- nd$bayesian_data
+        col_labs <- c("研究", "实验组", "对照组", "logHR (mean)", "标准误 (std.err)")
+        datatable(as.data.frame(df), options = list(pageLength = 10, scrollX = TRUE),
+                  rownames = FALSE, colnames = col_labs)
+      } else {
+        df <- nd$data
+        if (nd$type == "binary") {
+          col_labs <- c("研究", "治疗组", "样本量 (n)", "事件数 (d)")
+        } else {
+          col_labs <- c("研究", "治疗组", "效应/事件 (d)", "样本量 (n)")
+        }
+        datatable(as.data.frame(df), options = list(pageLength = 10, scrollX = TRUE),
+                  rownames = FALSE, colnames = col_labs)
+      }
+    })
+
+    # ---------- 运行 NMA ----------
+    observeEvent(input$run_nma, {
+      nd <- nma_data()
+      if (is.null(nd)) {
+        nma_result_val(NULL)
+        return()
+      }
+      ref_trt <- clean_treatment_unified(input$ref_trt)
+
+      withProgress(message = '运行 NMA 分析...', value = 0.3, {
+        final_res <- NULL
+        if (startsWith(input$nma_method, "freq_")) {
+          incProgress(0.6, detail = "使用频率学派方法...")
+          final_res <- run_nma_frequentist(nd, ref_trt, input$nma_method)
+        } else if (input$nma_method %in% c("bayes_fixed", "bayes_random")) {
+          incProgress(0.6, detail = "运行贝叶斯模型（可能需要几分钟）...")
+          final_res <- run_nma_bayesian(nd, ref_trt, input$nma_method, raw_data = current_data())
+        } else {
+          showNotification("未知的方法类型", type = "error")
+          return()
+        }
+        if (!is.null(final_res)) {
+          nma_result_val(final_res)
+          last_run_studies(selected_studies())
+          showNotification("NMA 运行成功！", type = "message")
+        } else {
+          nma_result_val(NULL)
+        }
+      })
+    })
+
+    nma_result <- reactive({ nma_result_val() })
+
+    output$nma_status <- renderText({
+      if (is.null(nma_result_val())) "状态：尚未运行 NMA（请点击\"运行网络分析\"按钮）"
+      else {
+        current_ids <- selected_studies()
+        last_ids <- last_run_studies()
+        if (!is.null(last_ids) && !identical(sort(current_ids), sort(last_ids)))
+          "⚠️ 警告：当前显示的研究与最后一次运行 NMA 时不一致，请重新运行！"
+        else if (nma_result_val()$method_family == "bayesian")
+          "✅ 状态：贝叶斯 NMA 已运行成功（基于当前选择的研究）"
+        else
+          "✅ 状态：频率学派 NMA 已运行成功（基于当前选择的研究）"
+      }
+    })
+
+    # ---------- 网络结构图 ----------
+    output$netplot <- renderPlot({
+      res <- nma_result_val()
+      req(res)
+      if (res$method_family == "bayesian") {
+        plot(res$result$network, cex = 1.2)
+        title("Network Plot (Bayesian)")
+      } else {
+        tryCatch({
+          NMA::netplot(res$setup, text = TRUE, base.cex = 1.2)
+        }, error = function(e) {
+          plot(1, type = "n", axes = FALSE, xlab = "", ylab = "",
+               main = paste("网络图绘制失败:\n", e$message), col = "red")
+          text(1, 1, "请检查数据是否满足NMA分析要求", cex = 1.2)
+        })
+      }
+    })
+
+    # ---------- 贝叶斯诊断图 ----------
+    output$bayes_diag_plots <- renderUI({
+      res <- nma_result_val()
+      req(res, res$method_family == "bayesian")
+      samples <- res$result$model$samples
+      if (is.null(samples)) return(p("MCMC 样本为空"))
+      params <- colnames(samples[[1]])
+      ns <- session$ns
+      plot_list <- lapply(seq_along(params), function(i) {
+        plotOutput(ns(paste0("bayes_param_", i)), height = "400px")
+      })
+      do.call(tagList, plot_list)
+    })
+
+    observeEvent(nma_result_val(), {
+      res <- nma_result_val()
+      if (is.null(res) || res$method_family != "bayesian") return()
+      samples <- res$result$model$samples
+      if (is.null(samples)) return()
+      params <- colnames(samples[[1]])
+      ns <- session$ns
+      for (i in seq_along(params)) {
+        local({
+          param <- params[i]
+          plot_id <- paste0("bayes_param_", i)
+          output[[plot_id]] <- renderPlot({
+            vals <- do.call(c, lapply(samples, function(chain) as.vector(chain[, param])))
+            n_iters <- nrow(samples[[1]])
+            n_chains <- length(samples)
+            df <- data.frame(Iteration = rep(1:n_iters, n_chains),
+                             Value = vals,
+                             Chain = factor(rep(1:n_chains, each = n_iters)))
+            par(mfrow = c(1, 2))
+            plot(df$Iteration, df$Value, type = "n",
+                 xlab = "Iteration", ylab = param, main = paste("Trace -", param))
+            for (ch in levels(df$Chain)) {
+              sub <- df[df$Chain == ch, ]
+              lines(sub$Iteration, sub$Value, col = as.integer(ch))
+            }
+            legend("topright", legend = levels(df$Chain), col = 1:n_chains, lty = 1, cex = 0.8)
+            plot(density(df$Value), main = paste("Density -", param), xlab = param)
+          })
+        })
+      }
+    }, priority = 100)
+
+    output$bayes_params_info <- renderPrint({
+      res <- nma_result_val()
+      req(res, res$method_family == "bayesian")
+      samples <- res$result$model$samples
+      if (is.null(samples)) {
+        cat("MCMC 样本为空，无法提取参数信息。\n")
+        return()
+      }
+      all_params <- coda::varnames(samples)
+      cat("模型参数总数:", length(all_params), "\n")
+      cat("参数列表:\n")
+      cat(paste(all_params, collapse = ", "), "\n")
+      d_params <- grep("^d\\.", all_params, value = TRUE)
+      sd_params <- grep("^sd\\.", all_params, value = TRUE)
+      if (length(d_params) > 0) {
+        cat("\n相对效应参数 (d.*):", length(d_params), "个\n")
+        cat(paste(d_params, collapse = ", "), "\n")
+      }
+      if (length(sd_params) > 0) {
+        cat("\n异质性参数 (sd.*):", length(sd_params), "个\n")
+        cat(paste(sd_params, collapse = ", "), "\n")
+      }
+    })
+
+    # ---------- 森林图 ----------
+    output$nmaforest <- renderPlot({
+      res <- nma_result_val()
+      req(res)
+      if (res$method_family == "bayesian") {
+        gemtc::forest(res$result$model)
+        title(main = "Forest Plot (Bayesian NMA)")
+        return()
+      }
+      method_nma <- switch(input$nma_method,
+                           freq_REML = "REML",
+                           freq_fixed = "fixed",
+                           freq_NH = "NH",
+                           "REML")
+      tryCatch({
+        suppressWarnings({
+          NMA::nmaforest(res$setup, method = method_nma)
+        })
+      }, error = function(e) {
+        plot.new()
+        title("森林图生成失败", col.main = "red")
+        text(0.5, 0.5, paste0("错误信息：", e$message), cex = 1.1)
+      })
+    })
+
+    # ---------- 结果摘要 ----------
+    output$nma_summary <- renderPrint({
+      res <- nma_result_val()
+      if (is.null(res)) {
+        cat("未获得有效结果。请检查：\n1. 至少选择2个研究\n2. 数据中治疗组名称匹配\n3. 治疗效果指标选择正确\n")
+      } else if (res$method_family == "bayesian") {
+        cat("【贝叶斯网络荟萃分析结果】\n")
+        cat("参考治疗：", res$result$ref_trt, "\n")
+        cat("模型类型：", ifelse(res$result$linearModel == "fixed", "固定效应", "随机效应"), "\n")
+        print(summary(res$result$model))
+      } else {
+        print(res$result)
+      }
+    })
+
+    # ---------- 治疗排名（SUCRA）----------
+    rank_result <- reactive({
+      res <- nma_result_val()
+      if (is.null(res) || is.null(res$result)) return(NULL)
+
+      if (res$method_family == "bayesian") {
+        ranking <- tryCatch({
+          rank_probs <- gemtc::rank.probability(res$result$model)
+          sucra_vals <- gemtc::sucra(rank_probs)
+          list(rank_probs = rank_probs, sucra = sucra_vals)
+        }, error = function(e) {
+          showNotification(paste("贝叶斯排名计算失败：", e$message), type = "warning")
+          return(NULL)
+        })
+        if (is.null(ranking)) return(NULL)
+        sucra <- ranking$sucra
+        rank_probs <- ranking$rank_probs   # 保存概率矩阵
+
+        trt_map <- res$result$treatments_df
+        id_to_name <- setNames(trt_map$description, trt_map$id)
+        rank_df <- data.frame(
+          Treatment = id_to_name[names(sucra)],
+          SUCRA = as.numeric(sucra),
+          stringsAsFactors = FALSE
+        ) %>% arrange(desc(SUCRA))
+        #return(rank_df)
+        # 返回列表而不是单纯的数据框
+        return(list(sucra = rank_df, rank_probs = rank_probs))
+      }
+
+      # 频率学派排名
+      setup_obj <- res$setup
+      trt_names <- NULL
+      if (!is.null(setup_obj$trt.id)) {
+        trt_names <- names(setup_obj$trt.id)
+      } else if (!is.null(setup_obj$data) && is.data.frame(setup_obj$data) && "trt" %in% names(setup_obj$data)) {
+        trt_names <- sort(unique(setup_obj$data$trt))
+      }
+      current_treats <- all_treatments()
+      if (!is.null(trt_names) && !is.null(current_treats) && !identical(sort(trt_names), sort(current_treats))) {
+        trt_names <- current_treats
+      } else if (is.null(trt_names) && !is.null(current_treats)) {
+        trt_names <- current_treats
+      }
+      if (is.null(trt_names)) {
+        showNotification("无法获取治疗名称列表，排名计算中止", type = "warning")
+        return(NULL)
+      }
+
+      orig_method <- switch(input$nma_method,
+                            freq_REML = "REML",
+                            freq_fixed = "fixed",
+                            freq_NH = "NH",
+                            "REML")
+      rank <- tryCatch({
+        NMA::nmarank(res$result, method = orig_method)
+      }, error = function(e) {
+        tryCatch({
+          NMA::nmarank(setup_obj, method = orig_method)
+        }, error = function(e2) {
+          showNotification(paste("排名计算失败:", e2$message), type = "warning")
+          NULL
+        })
+      })
+      if (is.null(rank)) return(NULL)
+
+      make_rank_df <- function(vec, col_name) {
+        vec <- as.numeric(vec)
+        if (length(vec) == length(trt_names)) {
+          names(vec) <- trt_names
+        } else {
+          if (!is.null(names(vec)) && all(names(vec) %in% trt_names)) {
+            full_vec <- setNames(rep(NA, length(trt_names)), trt_names)
+            full_vec[names(vec)] <- vec
+            vec <- full_vec
+          } else {
+            names(vec) <- trt_names[seq_along(vec)]
+          }
+        }
+        df <- data.frame(Treatment = names(vec), Value = vec, stringsAsFactors = FALSE)
+        names(df)[2] <- col_name
+        df <- df[order(-df[[col_name]]), ]
+        df
+      }
+
+      if (is.list(rank) && !is.data.frame(rank)) {
+        if ("SUCRA" %in% names(rank)) return(make_rank_df(rank$SUCRA, "SUCRA"))
+        if ("Pbest" %in% names(rank)) return(make_rank_df(rank$Pbest, "P_best"))
+        return(rank)
+      } else if (is.data.frame(rank)) {
+        if ("Treatment" %in% colnames(rank) && is.numeric(rank$Treatment))
+          rank$Treatment <- trt_names[rank$Treatment]
+        if ("trt" %in% colnames(rank) && is.numeric(rank$trt)) {
+          rank$Treatment <- trt_names[rank$trt]
+          rank$trt <- NULL
+        }
+        if ("SUCRA" %in% colnames(rank)) rank <- rank[order(-rank$SUCRA), ]
+        if ("P_best" %in% colnames(rank)) rank <- rank[order(-rank$P_best), ]
+        return(rank)
+      } else if (is.numeric(rank)) {
+        return(make_rank_df(rank, "Score"))
+      }
+      NULL
+    })
+
+    output$rank_output_ui <- renderUI({
+      rank <- rank_result()
+      if (is.null(rank)) return(p("无法获取排名结果，请检查 NMA 模型是否成功运行。"))
+      if (is.data.frame(rank) && nrow(rank) > 0) DTOutput(session$ns("rank_table"))
+      else verbatimTextOutput(session$ns("rank_text"))
+    })
+
+    output$rank_table <- renderDT({
+      rank <- rank_result()
+      req(is.data.frame(rank) && nrow(rank) > 0)
+      datatable(rank, options = list(pageLength = 10, dom = 't'), rownames = FALSE) %>%
+        formatRound(columns = which(sapply(rank, is.numeric)), digits = 3)
+    })
+
+    output$rank_text <- renderPrint({
+      rank <- rank_result()
+      cat("=== 治疗排名信息 ===\n")
+      if (is.null(rank)) cat("未能计算排名。") else print(rank)
+    })
+
+    # ---------- 联赛表模块 ----------
+    leagueTableServer("league_table",
+                      nma_result = reactive({ nma_result_val() }),
+                      rank_result = rank_result,
+                      nma_method = reactive({ input$nma_method })
+    )
+
+    # 独立排名图模块（Fig 3）
+    rankDiagramServer("rank_diagram", rank_result = rank_result)
+  })
+}

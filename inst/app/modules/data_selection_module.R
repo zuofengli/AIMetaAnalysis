@@ -296,7 +296,7 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
           grouped <- filtered %>% dplyr::filter(!is.na(subgroup_option)) %>% group_by(unique_id, subgroup_option)
           selected_rows <- grouped %>% group_modify(~ select_study_record_priority(.x, input$stratified_filter)) %>% ungroup()
           if (nrow(selected_rows) == 0) return(NULL)
-          result <- selected_rows %>% rename(subgroup_level = subgroup_option) %>% select(unique_id, study_display, te, se_te, n1, n2, subgroup_level)
+          result <- selected_rows %>% rename(subgroup_level = subgroup_option) %>% select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2, subgroup_level)
           return(result)
         } else {
           # 总体分析
@@ -308,7 +308,7 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
           grouped <- filtered_overall %>% group_by(unique_id)
           selected_rows <- grouped %>% group_modify(~ select_study_record_priority(.x, input$stratified_filter)) %>% ungroup()
           if (nrow(selected_rows) == 0) return(NULL)
-          result <- selected_rows %>% select(unique_id, study_display, te, se_te, n1, n2)
+          result <- selected_rows %>% select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2)
 
           if (!is.null(input$study_group_var) && input$study_group_var != "none") {
             group_info <- studies_info %>% select(unique_id, phase, regimen_type)
@@ -368,6 +368,8 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
         subgroup = input$subgroup,
         study_group_var = input$study_group_var,
         stratified_filter = input$stratified_filter,
+        # 新增
+        selected_levels = selected_order(),
         model = NULL
       )
     })

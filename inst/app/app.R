@@ -130,8 +130,13 @@ server <- function(input, output, session) {
   network <- networkMetaServer("network",
                                data_type      = reactive(data_selected()$data_type),
                                outcome        = reactive(data_selected()$outcome),
+                               # ⭐⭐⭐ 关键：subgroup 传进去
+                               subgroup = reactive(data_selected()$subgroup),
+                               selected_levels = reactive(data_selected()$selected_levels),
+
                                selected_studies = reactive(data_selected()$current_data$unique_id),
                                current_data   = reactive(data_selected()$current_data),
+
                                studies_info   = studies_info
   )
 
