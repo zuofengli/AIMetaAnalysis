@@ -5,6 +5,8 @@ library(dplyr)
 library(tidyr)
 library(shinyjqui)   # 拖拽排序
 library(openxlsx)    # Excel 导出及样式
+library(gt)          # 高质量表格构建
+library(webshot2)    # PDF 渲染（基于 Chrome）
 
 # 统一清洗函数（与主模块保持一致）
 clean_treatment_unified <- function(x) {
@@ -38,6 +40,172 @@ is_significant_cell <- function(cell, eff_type) {
     }
   }
   return(FALSE)
+}
+
+# ---------- 辅助：将联赛表绘制为 PDF（使用 gt + webshot2）----------
+draw_league_table_pdf <- function(df, eff_type, file) {
+  # 检查依赖包
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    stop("Please install gt: install.packages('gt')")
+  }
+  if (!requireNamespace("webshot2", quietly = TRUE)) {
+    stop("Please install webshot2: install.packages('webshot2')")
+  }
+
+  # 1. 准备数据
+  mat <- as.matrix(df[, -1, drop = FALSE])
+  rownames(mat) <- df[[1]]
+  colnames(mat) <- df[[1]]
+
+  # 2. 构建 gt 表格
+  gt_tbl <- mat %>%
+    as.data.frame() %>%
+    gt(rownames_to_stub = TRUE) %>%
+    tab_options(
+      table.width = pct(100),
+      table.font.size = px(10),
+      column_labels.font.size = px(10),
+      column_labels.font.weight = "bold",
+      data_row.padding = px(3),
+      stub.font.size = px(10),
+      stub.font.weight = "bold",
+      table.border.top.color = "black",
+      table.border.bottom.color = "black",
+      heading.border.bottom.color = "black",
+      column_labels.border.bottom.color = "black",
+      column_labels.border.top.color = "black"
+    ) %>%
+    tab_header(
+      title = paste("League Table -", eff_type, " (95% CI)")
+    ) %>%
+    cols_align(align = "center", columns = everything()) %>%
+    tab_style(
+      style = cell_text(align = "left"),
+      locations = cells_stub()
+    )
+
+  # 3. 对显著单元格应用红色加粗
+  for (i in seq_len(nrow(mat))) {
+    for (j in seq_len(ncol(mat))) {
+      cell_text <- mat[i, j]
+      if (is_significant_cell(cell_text, eff_type)) {
+        gt_tbl <- gt_tbl %>%
+          tab_style(
+            style = list(cell_text(color = "red", weight = "bold")),
+            locations = cells_body(columns = colnames(mat)[j], rows = i)
+          )
+      }
+    }
+  }
+
+  # 4. 生成 HTML（inline_css = TRUE 确保样式内嵌）
+  temp_html <- tempfile(fileext = ".html")
+  gtsave(gt_tbl, filename = temp_html, inline_css = TRUE)
+
+  # 5. 使用 selector 精确裁剪
+  tryCatch({
+    webshot2::webshot(
+      url = temp_html,
+      file = file,
+      vwidth = 2000,
+      vheight = 2000,
+      zoom = 1.5,
+      selector = "table",
+      expand = 0,
+      delay = 0.5
+    )
+  }, error = function(e) {
+    # 降级方案：使用 viewport + 手动估算
+    warning("Selector method failed, falling back to viewport clipping: ", e$message)
+    n_trt <- ncol(mat)
+    col_width_px <- 100
+    stub_width_px <- 120
+    vwidth <- stub_width_px + n_trt * col_width_px + 40
+    vheight <- 100 + nrow(mat) * 30 + 30
+    webshot2::webshot(
+      url = temp_html,
+      file = file,
+      vwidth = max(vwidth, 800),
+      vheight = max(vheight, 600),
+      zoom = 1.5,
+      cliprect = "viewport",
+      delay = 0.5
+    )
+  })
+
+  unlink(temp_html)
+}
+
+# ---------- 新增：导出 LaTeX 表格代码 ----------
+generate_latex_table <- function(df, eff_type, file) {
+  # 准备矩阵
+  mat <- as.matrix(df[, -1, drop = FALSE])
+  rownames(mat) <- df[[1]]
+  colnames(mat) <- df[[1]]
+
+  n <- nrow(mat)
+  trt_names <- rownames(mat)
+
+  # 对角线参考值
+  ref_val <- if (eff_type %in% c("OR", "RR", "HR")) "1 (ref)" else "0 (ref)"
+
+  # 表头行
+  header <- paste0(" & ", paste(trt_names, collapse = " & "))
+
+  # 列格式：第一列左对齐，其余居中
+  col_spec <- paste0("l|", paste(rep("c", n), collapse = ""))
+
+  # 构建每一行
+  rows <- character(n)
+  for (i in 1:n) {
+    row_name <- trt_names[i]
+    row_cells <- character(n)
+    for (j in 1:n) {
+      if (i == j) {
+        row_cells[j] <- ref_val
+      } else {
+        cell_text <- mat[i, j]
+        # 解析 "OR (lower, upper)" 格式
+        pattern <- "^([0-9.]+)\\s*\\(([0-9.]+),\\s*([0-9.]+)\\)$"
+        matches <- regexec(pattern, cell_text)
+        extracted <- regmatches(cell_text, matches)[[1]]
+        if (length(extracted) == 4) {
+          or_val <- extracted[2]
+          lower <- extracted[3]
+          upper <- extracted[4]
+          ci_str <- paste0("(", lower, ", ", upper, ")")
+          # 构建 makecell 换行
+          cell_content <- paste0("\\makecell{", or_val, " \\\\ ", ci_str, "}")
+          # 显著性标记：若显著，整个 makecell 红色加粗
+          if (is_significant_cell(cell_text, eff_type)) {
+            cell_content <- paste0("\\textbf{\\textcolor[HTML]{FF0000}{", cell_content, "}}")
+          }
+          row_cells[j] <- cell_content
+        } else {
+          # 若解析失败（例如空白单元格），保留原文本
+          row_cells[j] <- cell_text
+        }
+      }
+    }
+    rows[i] <- paste0("\\multicolumn{1}{l}{", row_name, "} & ", paste(row_cells, collapse = " & "))
+  }
+
+  # 构建完整 LaTeX 代码（使用 resizebox 缩放至页面宽度）
+  table_code <- paste0(
+    "\\renewcommand{\\arraystretch}{1.3}\n",
+    "\\resizebox{\\textwidth}{!}{%\n",
+    "  \\begin{tabular}{", col_spec, "}\n",
+    "    \\toprule\n",
+    header, " \\\\\n",
+    "    \\midrule \\addlinespace[2.5pt]\n",
+    paste(rows, collapse = " \\\\\n"),
+    " \\\\\n",
+    "    \\bottomrule\n",
+    "  \\end{tabular}%\n",
+    "}"
+  )
+
+  writeLines(table_code, con = file)
 }
 
 leagueTableUI <- function(id) {
@@ -76,18 +244,24 @@ leagueTableUI <- function(id) {
       column(2,
              actionButton(ns("reset_order"), "重置顺序",
                           icon = icon("undo"), class = "btn-warning")
-      ),
-      column(2,
-             downloadButton(ns("download"), "下载联赛表 (Excel)",
-                            class = "btn-success pull-right")
       )
     ),
-    # 自定义拖拽排序区域
-    conditionalPanel(
-      condition = sprintf("input['%s'] == 'custom'", ns("sort_by")),
-      div(style = "margin-top: 10px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;",
-          h5("↕️ 拖拽治疗标签调整顺序（上方为行/列的第一行/列）"),
-          uiOutput(ns("custom_sort_ui"))
+    fluidRow(
+      column(4,  # 调整列宽以容纳三个按钮
+             downloadButton(ns("download"), "下载 Excel", class = "btn-success"),
+             downloadButton(ns("download_pdf"), "下载 PDF", class = "btn-success"),
+             downloadButton(ns("download_latex"), "下载 LaTeX (.tex)", class = "btn-primary")  # 新增
+      ),
+      column(8,
+             div(style = "text-align: right;",
+                 conditionalPanel(
+                   condition = sprintf("input['%s'] == 'custom'", ns("sort_by")),
+                   div(style = "margin-top: 5px; padding: 5px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;",
+                       h5("↕️ 拖拽治疗标签调整顺序（上方为行/列的第一行/列）"),
+                       uiOutput(ns("custom_sort_ui"))
+                   )
+                 )
+             )
       )
     ),
     verbatimTextOutput(ns("error_msg")),
@@ -171,8 +345,30 @@ build_league_table_bayesian <- function(bayes_res, measure) {
 }
 
 # ==================== Server ====================
-leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
+# 修改：增加 outcome 和 nma_info 参数（与排名图模块一致）
+leagueTableServer <- function(id, nma_result, rank_result, nma_method,
+                              outcome = NULL, nma_info = NULL,
+                              subgroup = NULL, selected_levels = NULL) {
   moduleServer(id, function(input, output, session) {
+
+    # 获取亚组变量名
+    subgroup_val <- reactive({
+      if (!is.null(subgroup) && is.function(subgroup)) {
+        subgroup()
+      } else {
+        subgroup   # 如果是静态值
+      }
+    })
+
+    # 获取选定的亚组水平列表（通常是单个）
+    selected_levels_val <- reactive({
+      if (!is.null(selected_levels) && is.function(selected_levels)) {
+        selected_levels()
+      } else {
+        selected_levels
+      }
+    })
+
 
     # ---------- 效应量类型 ----------
     get_effect_type <- reactive({
@@ -482,10 +678,72 @@ leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
       dt
     })
 
+    # ---------- 辅助函数：生成包含元信息的文件名 ----------
+    # ---------- 辅助函数：生成包含元信息的文件名 ----------
+    get_download_filename <- function(extension, prefix = "league_table") {
+      # 获取结局
+      out <- if (!is.null(outcome) && is.function(outcome)) {
+        outcome()
+      } else if (!is.null(outcome)) {
+        outcome
+      } else {
+        NULL
+      }
+      if (is.null(out) || out == "") out <- "outcome"
+      out_clean <- gsub("[^A-Za-z0-9]", "_", out)
+
+      # ---- 新增：获取亚组信息 ----
+      sub <- if (!is.null(subgroup) && is.function(subgroup)) {
+        subgroup()
+      } else {
+        subgroup
+      }
+      #browser()
+      sel <- if (!is.null(selected_levels) && is.function(selected_levels)) {
+        selected_levels()
+      } else {
+        selected_levels
+      }
+
+      # 构建亚组后缀
+      sub_suffix <- ""
+      if (!is.null(sub) && sub != "Overall" && length(sel) == 1 && !is.null(sel) && sel != "") {
+        # 亚组变量非 "Overall" 且只有一个选定水平时，添加该水平
+        sub_suffix <- paste0("_", gsub("[^A-Za-z0-9]", "_", sel[1]))
+      } else if (!is.null(sub) && sub != "Overall" && length(sel) > 1) {
+        # 多个水平时使用 "multi" 作为标记（可根据需要调整）
+        sub_suffix <- "_multi"
+      }
+      # 若亚组为 "Overall" 或 NULL，则不添加后缀
+
+      # 获取方法信息
+      if (!is.null(nma_info) && is.function(nma_info)) {
+        info <- nma_info()
+        method_family <- info$method_family %||% "unknown"
+        model_type <- info$model_type %||% "unknown"
+      } else if (!is.null(nma_info) && is.list(nma_info)) {
+        method_family <- nma_info$method_family %||% "unknown"
+        model_type <- nma_info$model_type %||% "unknown"
+      } else {
+        # 回退：从 nma_method 推断
+        method <- nma_method()
+        if (is.character(method)) {
+          method_family <- ifelse(startsWith(method, "bayes"), "bayes", "freq")
+          model_type <- ifelse(grepl("fixed", method, ignore.case = TRUE), "fixed", "random")
+        } else {
+          method_family <- "unknown"
+          model_type <- "unknown"
+        }
+      }
+
+      # 组合文件名：方法-结局[亚组]-模型-前缀_日期.扩展名
+      paste0(method_family, "-", out_clean, "-", sub, "-", sub_suffix, "-", model_type, "-", prefix, "_", Sys.Date(), ".", extension)
+    }
+
     # ---------- Excel 下载 ----------
     output$download <- downloadHandler(
       filename = function() {
-        paste0("league_table_", Sys.Date(), ".xlsx")
+        get_download_filename("xlsx")
       },
       content = function(file) {
         df <- reordered_league_table()
@@ -505,10 +763,20 @@ leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
         writeData(wb, sheet = "League Table", x = df, startCol = 1, startRow = 1,
                   rowNames = FALSE, colNames = TRUE)
 
-        boldRedStyle <- createStyle(fontColour = "#FF0000", textDecoration = "bold")
 
+        # 【必须优先执行】先定义行列数，供后续的样式和列宽调用
         n_row <- nrow(df)
         n_col <- ncol(df)
+
+
+        # ===== 【新增】表头旋转 -90 度，并垂直居中 =====
+        headerStyle <- createStyle(textRotation = -90, halign = "center", valign = "center")
+        addStyle(wb, sheet = "League Table", style = headerStyle, rows = 1, cols = 1:n_col, gridExpand = TRUE)
+        # ==============================================
+
+        boldRedStyle <- createStyle(fontColour = "#FF0000", textDecoration = "bold")
+
+
         if (n_col >= 2) {
           for (r in 1:n_row) {
             for (c in 2:n_col) {
@@ -522,7 +790,12 @@ leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
             }
           }
         }
-        setColWidths(wb, sheet = "League Table", cols = 1:n_col, widths = "auto")
+
+        # ===== 【修改】列宽不再使用 auto，针对旋转后的表头设定固定宽度 =====
+        # 第一列 (治疗名称) 宽 25，其余数据列宽 16 （您可调整这两个数值）
+        col_widths <- c(25, rep(16, n_col - 1))
+        setColWidths(wb, sheet = "League Table", cols = 1:n_col, widths = col_widths)
+        # ================================================================
 
         # --- Sheet 2: Model Info ---
         addWorksheet(wb, "Model Info")
@@ -547,6 +820,56 @@ leagueTableServer <- function(id, nma_result, rank_result, nma_method) {
         setColWidths(wb, sheet = "Model Info", cols = 1:2, widths = c(20, 40))
 
         saveWorkbook(wb, file, overwrite = TRUE)
+      }
+    )
+
+    # ---------- PDF 下载（使用 gt + webshot2）----------
+    output$download_pdf <- downloadHandler(
+      filename = function() {
+        get_download_filename("pdf")
+      },
+      content = function(file) {
+        df <- reordered_league_table()
+        if (is.null(df) || nrow(df) == 0) {
+          pdf(file, width = 8, height = 6)
+          plot.new()
+          text(0.5, 0.5, "No league table data available", cex = 1.5)
+          dev.off()
+          return()
+        }
+
+        eff_type <- get_effect_type()
+        tryCatch({
+          draw_league_table_pdf(df, eff_type, file)
+        }, error = function(e) {
+          pdf(file, width = 8, height = 6)
+          plot.new()
+          text(0.5, 0.5, paste("PDF generation failed:", e$message), cex = 1.2, col = "red")
+          dev.off()
+        })
+      }
+    )
+
+    # ---------- 新增：LaTeX 下载 ----------
+    output$download_latex <- downloadHandler(
+      filename = function() {
+        get_download_filename("tex")
+      },
+      content = function(file) {
+        df <- reordered_league_table()
+        if (is.null(df) || nrow(df) == 0) {
+          # 生成空表格提示
+          writeLines("\\begin{table}[htbp]\\centering No data\\end{table}", con = file)
+          return()
+        }
+
+        eff_type <- get_effect_type()
+        tryCatch({
+          generate_latex_table(df, eff_type, file)
+        }, error = function(e) {
+          # 如果失败，写入错误信息
+          writeLines(paste0("\\begin{table}[htbp]\\centering LaTeX generation failed: ", e$message, "\\end{table}"), con = file)
+        })
       }
     )
 

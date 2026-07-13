@@ -1,12 +1,12 @@
 # modules/data_selection_module.R
-# 数据选择与准备模块：数据类型、结局、亚组、分组变量、亚组水平顺序、合成数据
+# 数据选择与准备模块：数据类型、结局、亚组、分组变量、亚组水平顺序、合成数据、治疗组列映射
 
 library(shiny)
 library(dplyr)
 library(tidyr)
 library(stringr)
 
-source("modules/synthetic_module.R")   # 确保合成模块在同一个作用域
+source("modules/synthetic_module.R")   # 合成模块
 
 dataSelectionUI <- function(id) {
   ns <- NS(id)
@@ -17,12 +17,21 @@ dataSelectionUI <- function(id) {
                              choices = c("二分类数据" = "binary", "生存数据 (HR)" = "survival"),
                              selected = "binary")),
       column(4, uiOutput(ns("outcome_ui"))),
+
+
       column(4, uiOutput(ns("subgroup_ui"))),
       column(4, conditionalPanel(
         condition = paste0("input['", ns("data_type"), "'] == 'survival'"),
         checkboxInput(ns("stratified_filter"), "优先使用分层分析数据 (stratified = Yes)", value = TRUE)
       ))
     ),
+    hr(),
+    h5("🔧 治疗组列映射（来自 studies_info）"),
+    fluidRow(
+      column(5, uiOutput(ns("exp_col_ui"))),
+      column(5, uiOutput(ns("comp_col_ui")))
+    ),
+    p(class = "text-muted", "💡 提示：选择后自动更新治疗组列表，无需额外确认。"),
     conditionalPanel(
       condition = paste0("input['", ns("subgroup"), "'] == 'Overall'"),
       fluidRow(
@@ -73,6 +82,50 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
       }
       candidates %>% slice(1)
     }
+
+    # ---------- 列检测函数 ----------
+    detect_exp_columns <- reactive({
+      all_cols <- names(studies_info)
+      patterns <- c("^Experimental$", "^Experimental_Test_")
+      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
+      if (length(matched) == 0) matched <- all_cols
+      matched
+    })
+
+    detect_comp_columns <- reactive({
+      all_cols <- names(studies_info)
+      patterns <- c("^Comparator$", "^Comparator_Test_")
+      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
+      if (length(matched) == 0) matched <- all_cols
+      matched
+    })
+
+    # ---------- 列映射响应式存储 ----------
+    col_mapping <- reactiveValues(exp_col = NULL, comp_col = NULL)
+
+
+
+
+
+    output$exp_col_ui <- renderUI({
+      exp_options <- detect_exp_columns()
+      default_exp <- if ("Experimental" %in% exp_options) "Experimental" else exp_options[1]
+      selectInput(session$ns("exp_col"), label = "Experimental 列 (治疗组)",
+                  choices = exp_options, selected = default_exp)
+    })
+
+    output$comp_col_ui <- renderUI({
+      comp_options <- detect_comp_columns()
+      default_comp <- if ("Comparator" %in% comp_options) "Comparator" else comp_options[1]
+      selectInput(session$ns("comp_col"), label = "Comparator 列 (对照组)",
+                  choices = comp_options, selected = default_comp)
+    })
+
+    observe({
+      req(input$exp_col, input$comp_col)
+      col_mapping$exp_col <- input$exp_col
+      col_mapping$comp_col <- input$comp_col
+    })
 
     # ====== 结局指标 UI ======
     output$outcome_ui <- renderUI({
@@ -210,23 +263,58 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
       synthetic_data(NULL)
     })
 
+
+    # ---------- 公共辅助函数：获取治疗组映射 ----------
+    get_mapping <- function() {
+      exp_col <- col_mapping$exp_col
+      comp_col <- col_mapping$comp_col
+
+      if (is.null(exp_col) || is.null(comp_col)) {
+        # 可以在这里发出警告，但为了不阻断流程，返回空 data.frame
+        return(NULL)
+      }
+      if (!(exp_col %in% names(studies_info))) {
+        showNotification(paste("列", exp_col, "不存在于 studies_info"), type = "error")
+        return(NULL)
+      }
+      if (!(comp_col %in% names(studies_info))) {
+        showNotification(paste("列", comp_col, "不存在于 studies_info"), type = "error")
+        return(NULL)
+      }
+
+      mapping <- studies_info %>%
+        dplyr::select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
+        dplyr::mutate(
+          treat1 = trimws(gsub("[\r\n\t]+", " ", treat1)),
+          treat2 = trimws(gsub("[\r\n\t]+", " ", treat2))
+        ) %>%
+        dplyr::filter(
+          !is.na(treat1) & !is.na(treat2) &
+            treat1 != "" & treat2 != "" &
+            trimws(treat1) != "" & trimws(treat2) != ""
+        )
+
+      return(mapping)
+    }
+
+
+
+
+
+
     # ====== 基础数据准备（current_data_base） ======
-    # 注意：此处根据 selected_study_ids 过滤研究
     current_data_base <- reactive({
       req(input$outcome)
 
-      # 获取用户选中的研究 ID
       selected_ids <- selected_study_ids()
       if (is.null(selected_ids)) return(NULL)
 
       if (input$data_type == "binary") {
-        # 二分类数据，先按结局和研究 ID 过滤
         filtered <- binary_data %>%
           dplyr::filter(outcome == input$outcome,
                         unique_id %in% selected_ids)
 
         if (!is.null(input$subgroup) && input$subgroup != "" && input$subgroup != "Overall") {
-          # 亚组分析
           filtered <- filtered %>% dplyr::filter(tolower(subgroup) == tolower(input$subgroup))
           level_data <- filtered %>% dplyr::filter(!is.na(subgroup_option)) %>% mutate(level = subgroup_option)
           if (nrow(level_data) == 0) return(NULL)
@@ -244,9 +332,20 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
           result <- study_levels %>%
             rename(event_ici = d_ici, n_ici = n_ici, event_ctrl = d_ctrl, n_ctrl = n_ctrl, subgroup_level = level) %>%
             select(unique_id, study_display, event_ici, n_ici, event_ctrl, n_ctrl, subgroup_level)
+
+          #browser()
+          mapping <- get_mapping()
+          if (!is.null(mapping) && nrow(mapping) > 0) {
+            result <- result %>% left_join(mapping, by = "unique_id")
+          } else {
+            # 如果映射为空，可设置默认值或给出提示（但不要阻断）
+            result$treat1 <- NA_character_
+            result$treat2 <- NA_character_
+          }
+
+          #browser()
           return(result)
         } else {
-          # 总体分析（无亚组）
           filtered_overall <- dplyr::filter(filtered, subgroup == "Overall")
           if (nrow(filtered_overall) == 0) return(NULL)
           unique_studies <- unique(filtered_overall$unique_id)
@@ -277,7 +376,18 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
             }
             result <- dplyr::filter(result, !is.na(subgroup_level))
           }
+
+          mapping <- get_mapping()
+          if (!is.null(mapping) && nrow(mapping) > 0) {
+            result <- result %>% left_join(mapping, by = "unique_id")
+          } else {
+            # 如果映射为空，可设置默认值或给出提示（但不要阻断）
+            result$treat1 <- NA_character_
+            result$treat2 <- NA_character_
+          }
+          #browser()
           return(result[, c("unique_id", "study_display", "event_ici", "n_ici", "event_ctrl", "n_ctrl",
+                            "treat1", "treat2",
                             if("subgroup_level" %in% names(result)) "subgroup_level" else NULL)])
         }
       } else {
@@ -289,6 +399,7 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
 
         if (nrow(filtered) == 0) return(NULL)
 
+
         if (!is.null(input$subgroup) && input$subgroup != "" && input$subgroup != "Overall") {
           if (!("subgroup" %in% names(filtered)) || all(is.na(filtered$subgroup))) return(NULL)
           filtered <- dplyr::filter(filtered, tolower(subgroup) == tolower(input$subgroup))
@@ -296,7 +407,16 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
           grouped <- filtered %>% dplyr::filter(!is.na(subgroup_option)) %>% group_by(unique_id, subgroup_option)
           selected_rows <- grouped %>% group_modify(~ select_study_record_priority(.x, input$stratified_filter)) %>% ungroup()
           if (nrow(selected_rows) == 0) return(NULL)
-          result <- selected_rows %>% rename(subgroup_level = subgroup_option) %>% select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2, subgroup_level)
+
+          mapping <- get_mapping()
+          if (is.null(mapping)) return(NULL)
+
+          result <- selected_rows %>%
+            left_join(mapping, by = "unique_id") %>%
+            rename(subgroup_level = subgroup_option) %>%
+            dplyr::filter(!is.na(treat1) & !is.na(treat2)) %>%
+            dplyr::select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2, subgroup_level)
+          browswer()
           return(result)
         } else {
           # 总体分析
@@ -308,7 +428,16 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
           grouped <- filtered_overall %>% group_by(unique_id)
           selected_rows <- grouped %>% group_modify(~ select_study_record_priority(.x, input$stratified_filter)) %>% ungroup()
           if (nrow(selected_rows) == 0) return(NULL)
-          result <- selected_rows %>% select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2)
+
+          mapping <- get_mapping()
+          if (is.null(mapping)) return(NULL)
+
+
+          result <- selected_rows %>%
+            rename(origin.treat1 = treat1, origin.treat2 = treat2) %>%   # 重命名原始列
+            left_join(mapping, by = "unique_id") %>%
+            dplyr::filter(!is.na(treat1) & !is.na(treat2)) %>%
+            dplyr::select(unique_id, study_display, te, se_te, n1, n2, treat1, treat2)
 
           if (!is.null(input$study_group_var) && input$study_group_var != "none") {
             group_info <- studies_info %>% select(unique_id, phase, regimen_type)
@@ -320,6 +449,7 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
             }
             result <- dplyr::filter(result, !is.na(subgroup_level))
           }
+          #browser()
           return(result)
         }
       }
@@ -332,13 +462,13 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
 
       has_subgroup <- "subgroup_level" %in% names(base)
 
-      if (input$data_type == "survival" && !is.null(input$subgroup) && input$subgroup != "" && input$subgroup != "Overall") {
+      if (!is.null(input$subgroup) && input$subgroup != "" && input$subgroup != "Overall") {
         synth_df <- synthetic_data()
         if (!is.null(synth_df) && nrow(synth_df) > 0) {
           base <- base %>% mutate(is_synthetic = FALSE)
           synth_df <- synth_df %>% mutate(is_synthetic = TRUE)
           base <- bind_rows(base, synth_df)
-          base <- base %>% group_by(unique_id, subgroup_level) %>% arrange(is_synthetic) %>% slice(n()) %>% ungroup()
+          base <- base %>% group_by(unique_id, subgroup_level) %>% arrange(desc(is_synthetic)) %>% slice(1) %>% ungroup()
         } else {
           base <- base %>% mutate(is_synthetic = FALSE)
         }
@@ -368,9 +498,10 @@ dataSelectionServer <- function(id, studies_info, binary_data, survival_data, se
         subgroup = input$subgroup,
         study_group_var = input$study_group_var,
         stratified_filter = input$stratified_filter,
-        # 新增
         selected_levels = selected_order(),
-        model = NULL
+        model = NULL,
+        exp_col = col_mapping$exp_col,
+        comp_col = col_mapping$comp_col
       )
     })
   })

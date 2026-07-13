@@ -1,5 +1,6 @@
 # modules/network_meta_module.R
 # 完整的网络荟萃分析模块（排名表格和方向选择已移至 sucra_ranking_diagram_module.R）
+# 注：治疗组列映射已在 data_selection_module 中完成，本模块不再重复
 
 library(shiny)
 library(DT)
@@ -13,10 +14,6 @@ if (!requireNamespace("NMA", quietly = TRUE)) {
 if (!requireNamespace("gemtc", quietly = TRUE)) {
   stop("请安装 gemtc 包：install.packages('gemtc')")
 }
-if (!requireNamespace("coda", quietly = TRUE)) {
-  stop("请安装 coda 包：install.packages('coda')")
-}
-
 library(NMA)
 
 source("modules/league_table_module.R")
@@ -297,17 +294,6 @@ networkMetaUI <- function(id) {
   ns <- NS(id)
   tagList(
     h3("网络荟萃分析 (Network Meta-Analysis)"),
-    div(
-      class = "well",
-      style = "background-color: #d9edf7; padding: 15px; margin-bottom: 15px; border-left: 4px solid #5cb85c;",
-      h5("🔧 治疗组列映射（列选即生效）", style = "color: #3c763d; margin-top: 0;"),
-      fluidRow(
-        column(5, uiOutput(ns("exp_col_ui"))),
-        column(5, uiOutput(ns("comp_col_ui")))
-      ),
-      p(class = "text-muted", style = "margin-bottom: 0; margin-top: 8px;",
-        "💡 提示：选择后自动更新治疗组列表，无需额外确认。")
-    ),
     fluidRow(
       column(3, selectInput(ns("nma_method"), "估计方法",
                             choices = c(
@@ -334,6 +320,16 @@ networkMetaUI <- function(id) {
     hr(),
     h4("网络结构图 (Network Graph)"),
     plotOutput(ns("netplot"), height = "500px"),
+    htmlOutput(ns("netplot_caption"),
+               style = "text-align: center; font-style: italic; margin-top: -10px; margin-bottom: 15px; color: #555555;"),
+
+    fluidRow(
+      column(12,
+             downloadButton(ns("download_netplot"), "下载网络结构图 (PDF)", class = "btn-success"),
+             style = "margin-bottom: 20px;"
+      )
+    ),
+
     br(),
     conditionalPanel(
       condition = "input.nma_method == 'bayes_fixed' || input.nma_method == 'bayes_random'",
@@ -365,63 +361,13 @@ networkMetaUI <- function(id) {
 networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels, selected_studies, current_data, studies_info) {
   moduleServer(id, function(input, output, session) {
 
-    col_mapping <- reactiveValues(exp_col = NULL, comp_col = NULL)
-
-    # ---------- 列检测函数 ----------
-    detect_exp_columns <- reactive({
-      req(studies_info)
-      all_cols <- names(studies_info)
-      patterns <- c("^Experimental$", "^experimental$", "^treat1$",
-                    "^Experimental_Test_\\d+$", "^Exp_\\d+$", "^Treatment$", "^Intervention$")
-      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
-      if (length(matched) == 0) matched <- all_cols
-      matched
-    })
-
-    detect_comp_columns <- reactive({
-      req(studies_info)
-      all_cols <- names(studies_info)
-      patterns <- c("^Comparator$", "^comparator$", "^treat2$",
-                    "^Comparator_Test_\\d+$", "^Comp_\\d+$", "^Control$", "^Placebo$")
-      matched <- unique(unlist(lapply(patterns, function(p) grep(p, all_cols, value = TRUE, ignore.case = FALSE))))
-      if (length(matched) == 0) matched <- all_cols
-      matched
-    })
-
-    output$exp_col_ui <- renderUI({
-      req(studies_info)
-      exp_options <- detect_exp_columns()
-      default_exp <- if ("Experimental" %in% exp_options) "Experimental"
-      else if ("experimental" %in% exp_options) "experimental"
-      else if ("treat1" %in% exp_options) "treat1"
-      else exp_options[1]
-      selectInput(session$ns("selected_exp_col"), label = tagList(icon("flask"), "Experimental 列 (治疗组)"),
-                  choices = exp_options, selected = default_exp)
-    })
-
-    output$comp_col_ui <- renderUI({
-      req(studies_info)
-      comp_options <- detect_comp_columns()
-      default_comp <- if ("Comparator" %in% comp_options) "Comparator"
-      else if ("comparator" %in% comp_options) "comparator"
-      else if ("treat2" %in% comp_options) "treat2"
-      else comp_options[1]
-      selectInput(session$ns("selected_comp_col"), label = tagList(icon("chart-line"), "Comparator 列 (对照组)"),
-                  choices = comp_options, selected = default_comp)
-    })
-
-    observe({
-      req(input$selected_exp_col, input$selected_comp_col)
-      col_mapping$exp_col <- input$selected_exp_col
-      col_mapping$comp_col <- input$selected_comp_col
-    })
-
+    # ---------- 所有治疗名称（用于参考治疗下拉框） ----------
     all_treatments <- reactive({
-      req(selected_studies(), col_mapping$exp_col, col_mapping$comp_col)
-      studies_filtered <- studies_info %>%
-        dplyr::filter(unique_id %in% selected_studies()) %>%
-        dplyr::select(!!sym(col_mapping$exp_col), !!sym(col_mapping$comp_col))
-      treat_vec <- unique(c(studies_filtered[[1]], studies_filtered[[2]]))
+      req(selected_studies())
+      # 从 current_data 中提取所有独特的治疗组
+      dat <- current_data()
+      if (is.null(dat) || nrow(dat) == 0) return(NULL)
+      treat_vec <- unique(c(dat$treat1, dat$treat2))
       treat_vec <- treat_vec[!is.na(treat_vec)]
       treat_vec <- clean_treatment_unified(treat_vec)
       if (length(treat_vec) == 0) return(NULL)
@@ -451,18 +397,28 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
 
     output$measure_ui <- renderUI({
       if (data_type() == "binary") {
-        selectInput(session$ns("binary_measure"), "效应指标 (二分类)",
-                    choices = c("风险差 (RD)" = "RD", "风险比 (OR)" = "OR", "相对风险 (RR)" = "RR"),
-                    selected = "RD")
-      } else NULL
+        is_bayesian <- startsWith(input$nma_method, "bayes")
+        if (is_bayesian) {
+          selectInput(session$ns("binary_measure"), "效应指标 (二分类)",
+                      choices = c("风险比 (OR)" = "OR"),
+                      selected = "OR")
+        } else {
+          selectInput(session$ns("binary_measure"), "效应指标 (二分类)",
+                      choices = c("风险比 (OR)" = "OR", "风险差 (RD)" = "RD"),
+                      selected = "OR")
+        }
+      } else {
+        selectInput(session$ns("binary_measure"), "效应指标 (生存数据)",
+                    choices = c("风险比 (HR)" = "HR"),
+                    selected = "HR")
+      }
     })
 
     nma_result_val <- reactiveVal(NULL)
     last_run_studies <- reactiveVal(NULL)
 
     observeEvent(
-      list(selected_studies(), col_mapping$exp_col, col_mapping$comp_col,
-           data_type(), input$binary_measure),
+      list(selected_studies(), data_type(), input$binary_measure),
       {
         if (!is.null(nma_result_val())) {
           nma_result_val(NULL)
@@ -493,22 +449,9 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
       datatable(dat, options = list(pageLength = 10, scrollX = TRUE), rownames = FALSE)
     })
 
-    treat_info <- reactive({
-      req(studies_info, col_mapping$exp_col, col_mapping$comp_col)
-      exp_col <- col_mapping$exp_col
-      comp_col <- col_mapping$comp_col
-      if (!(exp_col %in% names(studies_info)) || !(comp_col %in% names(studies_info))) {
-        showNotification("选定的列不存在于数据中", type = "error")
-        return(NULL)
-      }
-      result <- studies_info %>%
-        dplyr::select(unique_id, treat1 = !!sym(exp_col), treat2 = !!sym(comp_col)) %>%
-        dplyr::distinct(unique_id, .keep_all = TRUE)
-      result
-    })
-
+    # ---------- NMA 数据准备 ----------
     nma_data <- reactive({
-      req(current_data(), treat_info())
+      req(current_data())
       study_ids <- selected_studies()
       if (is.null(study_ids) || length(study_ids) < 2) {
         showNotification("至少需要选择 2 项研究", type = "warning")
@@ -522,20 +465,25 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
       }
       req(is.data.frame(dat))
       dat <- dat %>% dplyr::filter(unique_id %in% study_ids)
+      #browser()
       if (nrow(dat) < 2) {
         showNotification("至少需要 2 项研究的数据", type = "error")
         return(NULL)
       }
-      info <- treat_info()
-      if (!("treat1" %in% names(dat)) | !("treat2" %in% names(dat))) {
-        dat <- dat %>% left_join(info, by = "unique_id")
+
+      # 确保 treat1/treat2 存在且非 NA（已在 data_selection_module 中处理好）
+      if (!("treat1" %in% names(dat)) || !("treat2" %in% names(dat))) {
+        showNotification("数据中缺少 treat1 或 treat2 列", type = "error")
+        return(NULL)
       }
       dat <- dat %>% dplyr::filter(!is.na(treat1) & !is.na(treat2))
 
       if (nrow(dat) == 0) {
-        showNotification("合并治疗信息后无有效数据", type = "error")
+        showNotification("所有研究的治疗组信息缺失", type = "error")
         return(NULL)
       }
+
+      #browser()
 
       if (data_type() == "binary") {
         long_data <- bind_rows(
@@ -547,6 +495,7 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
           showNotification("二分类数据转换后无有效记录", type = "error")
           return(NULL)
         }
+        #browser()
         list(type = "binary", data = long_data, measure = input$binary_measure)
       } else {
         if (!all(c("te", "se_te", "n1", "n2") %in% names(dat))) {
@@ -570,6 +519,7 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
         })
         if (is.null(trans_data)) return(NULL)
         trans_data$trt <- clean_treatment_unified(trans_data$trt)
+        trans_data$study <- as.character(dat$study_display)   # 确保研究名称正确
 
         bayesian_data <- dat %>%
           transmute(
@@ -710,6 +660,75 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
       }
     })
 
+    # ---------- 下载网络结构图 (PDF) ----------
+    output$download_netplot <- downloadHandler(
+      filename = function() {
+        # 构造文件名
+        res <- nma_result_val()
+        if (is.null(res)) {
+          showNotification("请先运行 NMA 分析", type = "warning")
+          return("network_plot.pdf")
+        }
+
+        # 方法前缀
+        prefix <- if (startsWith(input$nma_method, "bayes")) "bay" else "freq"
+
+        # 结局指标（清理）
+        out <- outcome()
+        if (is.null(out) || out == "") out <- "outcome"
+        out_clean <- gsub("[^A-Za-z0-9]", "_", out)
+
+        # 亚组信息
+        sub <- subgroup()
+        sel <- selected_levels()
+        sub_suffix <- ""
+        if (!is.null(sub) && sub != "Overall" && length(sel) == 1 && !is.null(sel) && sel != "") {
+          sub_clean <- gsub("[^A-Za-z0-9]", "_", sel[1])
+          sub_suffix <- paste0("_", sub_clean)
+        }
+
+        # 模型类型（固定/随机）
+        model_type <- if (grepl("fixed", input$nma_method, ignore.case = TRUE)) "fixed" else "random"
+
+        # 组合文件名
+        paste0(prefix, "-", out_clean, sub_suffix, "-", model_type, ".pdf")
+      },
+      content = function(file) {
+        res <- nma_result_val()
+        if (is.null(res)) {
+          showNotification("请先运行 NMA 分析", type = "error")
+          return(NULL)
+        }
+
+        # 打开 PDF 设备
+        pdf(file, width = 10, height = 8)
+
+        # 绘制网络结构图（与 renderPlot 相同逻辑）
+        if (res$method_family == "bayesian") {
+          plot(res$result$network, cex = 1.2)
+          title("Network Plot (Bayesian)")
+        } else {
+          tryCatch({
+            NMA::netplot(res$setup, text = TRUE, base.cex = 1.2)
+          }, error = function(e) {
+            plot(1, type = "n", axes = FALSE, xlab = "", ylab = "",
+                 main = paste("网络图绘制失败:\n", e$message), col = "red")
+            text(1, 1, "请检查数据是否满足NMA分析要求", cex = 1.2)
+          })
+        }
+
+        dev.off()
+      }
+    )
+
+    output$netplot_caption <- renderUI({
+      res <- nma_result_val()
+      req(res)
+      out <- outcome()
+      if (is.null(out) || out == "") out <- "Selected Outcome"
+      paste0("Fig. 1 Network graph of ", out)
+    })
+
     # ---------- 贝叶斯诊断图 ----------
     output$bayes_diag_plots <- renderUI({
       res <- nma_result_val()
@@ -821,7 +840,7 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
     })
 
     # ---------- 治疗排名（SUCRA） ----------
-    # 返回原始排名数据框，供联赛表和排名图模块使用（不在主模块进行方向翻转）
+    # ---------- 治疗排名（SUCRA） ----------
     rank_result <- reactive({
       res <- nma_result_val()
       if (is.null(res) || is.null(res$result)) return(NULL)
@@ -837,17 +856,21 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
         })
         if (is.null(ranking)) return(NULL)
         sucra <- ranking$sucra
+        rank_probs <- ranking$rank_probs
         trt_map <- res$result$treatments_df
         id_to_name <- setNames(trt_map$description, trt_map$id)
+
         rank_df <- data.frame(
           Treatment = id_to_name[names(sucra)],
           SUCRA = as.numeric(sucra),
           stringsAsFactors = FALSE
         ) %>% arrange(desc(SUCRA))
-        return(rank_df)
+
+
+        return(rank_df %>% arrange(desc(SUCRA)))
       }
 
-      # 频率学派排名
+      # ---------- 频率学派排名 ----------
       setup_obj <- res$setup
       trt_names <- NULL
       if (!is.null(setup_obj$trt.id)) {
@@ -872,40 +895,42 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
                             freq_NH = "NH",
                             "REML")
       rank <- tryCatch({
-        NMA::nmarank(res$result, method = orig_method)
+        NMA::nmarank(setup_obj, method = orig_method, ascending = FALSE)
       }, error = function(e) {
-        tryCatch({
-          NMA::nmarank(setup_obj, method = orig_method)
-        }, error = function(e2) {
-          showNotification(paste("排名计算失败:", e2$message), type = "warning")
-          NULL
-        })
+        showNotification(paste("排名计算失败:", e$message), type = "warning")
+        NULL
       })
       if (is.null(rank)) return(NULL)
 
+
+
       make_rank_df <- function(vec, col_name) {
-        vec <- as.numeric(vec)
-        if (length(vec) == length(trt_names)) {
-          names(vec) <- trt_names
-        } else {
-          if (!is.null(names(vec)) && all(names(vec) %in% trt_names)) {
-            full_vec <- setNames(rep(NA, length(trt_names)), trt_names)
-            full_vec[names(vec)] <- vec
-            vec <- full_vec
-          } else {
-            names(vec) <- trt_names[seq_along(vec)]
-          }
+        if (is.matrix(vec) && ncol(vec) == 1) {
+          nm <- rownames(vec)          # 先保存行名
+          vec <- as.vector(vec)        # 转换为向量
+          names(vec) <- nm             # 赋值名称
         }
-        df <- data.frame(Treatment = names(vec), Value = vec, stringsAsFactors = FALSE)
+        # 若仍无名称（以防万一），尝试从 dimnames 提取
+        if (is.null(names(vec)) && is.matrix(vec)) {
+          nm <- dimnames(vec)[[1]]
+          if (!is.null(nm)) names(vec) <- nm
+        }
+        df <- data.frame(Treatment = names(vec), Value = as.numeric(vec), stringsAsFactors = FALSE)
         names(df)[2] <- col_name
+        df <- df[!is.na(df[[col_name]]), ]
         df <- df[order(-df[[col_name]]), ]
         df
       }
 
+
+      rank_df <- NULL
       if (is.list(rank) && !is.data.frame(rank)) {
-        if ("SUCRA" %in% names(rank)) return(make_rank_df(rank$SUCRA, "SUCRA"))
-        if ("Pbest" %in% names(rank)) return(make_rank_df(rank$Pbest, "P_best"))
-        return(rank)
+
+        if ("SUCRA" %in% names(rank))
+          rank_df <- make_rank_df(rank$SUCRA, "SUCRA")
+        if ("Pbest" %in% names(rank))
+          rank_df <- make_rank_df(rank$Pbest, "P_best")
+
       } else if (is.data.frame(rank)) {
         if ("Treatment" %in% colnames(rank) && is.numeric(rank$Treatment))
           rank$Treatment <- trt_names[rank$Treatment]
@@ -913,13 +938,34 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
           rank$Treatment <- trt_names[rank$trt]
           rank$trt <- NULL
         }
-        if ("SUCRA" %in% colnames(rank)) rank <- rank[order(-rank$SUCRA), ]
-        if ("P_best" %in% colnames(rank)) rank <- rank[order(-rank$P_best), ]
-        return(rank)
+        rank_df <- rank
+        if ("SUCRA" %in% colnames(rank_df)) rank_df <- rank_df[order(-rank_df$SUCRA), ]
+        if ("P_best" %in% colnames(rank_df)) rank_df <- rank_df[order(-rank_df$P_best), ]
       } else if (is.numeric(rank)) {
-        return(make_rank_df(rank, "Score"))
+        rank_df <- make_rank_df(rank, "Score")
       }
-      NULL
+
+      if (!is.null(rank_df)) {
+        # --- 1. 防御性措施：确保 SUCRA 列存在且可计算 ---
+        if (!"SUCRA" %in% names(rank_df)) {
+          if ("P_best" %in% names(rank_df)) {
+            rank_df$SUCRA <- rank_df$P_best
+          } else if ("Score" %in% names(rank_df)) {
+            rank_df$SUCRA <- rank_df$Score
+          } else {
+            rank_df$SUCRA <- 0  # 默认全设为0，防止缺失
+          }
+        }
+
+        # 确保转换为数值，并将 NA 替换为 0，防止传入绘图层引发警告
+        rank_df$SUCRA <- as.numeric(rank_df$SUCRA)
+        rank_df$SUCRA[is.na(rank_df$SUCRA)] <- 0
+
+        # 重新降序排序
+        rank_df <- rank_df %>% arrange(desc(SUCRA))
+      }
+
+      return(rank_df)
     })
 
     # 返回完整排名信息（列表），供排名图模块（含 Rankogram）使用
@@ -955,15 +1001,33 @@ networkMetaServer <- function(id, data_type, outcome, subgroup, selected_levels,
       }
     })
 
+    nma_info <- reactive({
+      list(
+        method_family = ifelse(startsWith(input$nma_method, "bayes"), "bayes", "freq"),
+        model_type = ifelse(grepl("fixed", input$nma_method, ignore.case = TRUE), "fixed", "random")
+      )
+    })
+
     # ---------- 联赛表模块 ----------
     leagueTableServer("league_table",
                       nma_result = reactive({ nma_result_val() }),
                       rank_result = rank_result,
-                      nma_method = reactive({ input$nma_method })
-    )
+                      nma_method = reactive({ input$nma_method }),
+                      outcome = outcome,          # 新增
+                      nma_info = nma_info,        # 已有
+                      subgroup = subgroup,        # 新增，直接从外部传入
+                      selected_levels = selected_levels   # 新增
+                      )        # 新增
 
     # ---------- 独立排名图模块（支持 SUCRA 条形图/ Rankogram 和方向切换）----------
-    sucraDiagramServer("rank_diagram", rank_result = rank_full)
+
+
+    sucraDiagramServer("rank_diagram",
+                       rank_result = rank_full,
+                       outcome = outcome,
+                       nma_info = nma_info,        # 已有
+                       subgroup = subgroup,        # 新增，直接从外部传入
+                       selected_levels = selected_levels)
 
   })
 }

@@ -67,13 +67,28 @@ classicalMetaUI <- function(id) {
 
 classicalMetaServer <- function(id, data_type, outcome, subgroup, study_group_var,
                                 selected_studies, current_data) {
+
+
   moduleServer(id, function(input, output, session) {
+
+
 
     # ---------- 荟萃分析核心计算 ----------
     meta_result <- eventReactive(input$run, {
       req(selected_studies(), current_data())
       study_vec <- selected_studies()
       data <- current_data()
+
+
+      # ---- 自动检测数据类型（优先生存） ----
+      if ("te" %in% names(data) && "se_te" %in% names(data)) {
+        data_type_local <- "survival"
+      } else if ("event_ici" %in% names(data) && "n_ici" %in% names(data)) {
+        data_type_local <- "binary"
+      } else {
+        showNotification("无法识别数据类型，请检查数据列是否包含 te/se_te 或 event_ici/n_ici。", type = "error")
+        return(NULL)
+      }
 
       has_subgroup <- "subgroup_level" %in% names(data)
 
@@ -98,7 +113,7 @@ classicalMetaServer <- function(id, data_type, outcome, subgroup, study_group_va
           study_group_var()
         } else NULL
 
-        if (data_type() == "binary") {
+        if (data_type_local == "binary") {
           m <- metabin(event.e = event_ici, n.e = n_ici,
                        event.c = event_ctrl, n.c = n_ctrl,
                        studlab = studlab_modified,
@@ -132,7 +147,7 @@ classicalMetaServer <- function(id, data_type, outcome, subgroup, study_group_va
           data$studlab_modified <- data$study_display
         }
 
-        if (data_type() == "binary") {
+        if (data_type_local == "binary") {
           data$OR_true <- (data$event_ici * (data$n_ctrl - data$event_ctrl)) /
             ((data$n_ici - data$event_ici) * data$event_ctrl + 1e-10)
           data <- data[order(data$OR_true, decreasing = FALSE), ]
@@ -154,7 +169,6 @@ classicalMetaServer <- function(id, data_type, outcome, subgroup, study_group_va
       }
       return(m)
     })
-
     # ---------- 森林图 ----------
     output$forest_plot <- renderPlot({
       m <- meta_result()

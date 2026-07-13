@@ -85,12 +85,23 @@ server <- function(input, output, session) {
   })
 
   output$study_table <- renderDT({
-    # 表格显示列可以加上 unique_id 或仅保留 study_display
-    display_df <- filtered_studies()[, c("study_display", "phase", "year", "unique_id")]
+    # 【核心修改】：将 "Experimental" 列加到选取中。如果您的Excel列名是 "treat1"，请把这里换成 "treat1"
+    display_df <- filtered_studies()[, c("study_display", "phase", "year", "Experimental", "unique_id")]
+
     datatable(display_df, selection = 'multiple',
-              options = list(pageLength = 10, autoWidth = TRUE,
-                             columnDefs = list(list(visible = FALSE, targets = 3))), # 隐藏 unique_id 列
-              rownames = FALSE, colnames = c("研究名称", "分期", "年份", "ID"))
+              options = list(
+                pageLength = 10,
+                autoWidth = FALSE,  # 关闭自动宽度，让自定义列宽生效
+                columnDefs = list(
+                  list(visible = FALSE, targets = 4),           # 隐藏第 5 列 (unique_id)
+                  list(width = '200px', targets = 0),           # 研究名称宽度
+                  list(width = '100px', targets = 1),           # 分期宽度
+                  list(width = '80px', targets = 2),            # 年份宽度
+                  list(width = '350px', targets = 3)            # 【关键】实验组治疗名称宽度，设置大一点防止折行/截断
+                )
+              ),
+              rownames = FALSE,
+              colnames = c("研究名称", "分期", "年份", "实验组治疗", "ID"))  # 设置显示的表头
   })
 
   selected_study_ids <- reactive({
@@ -114,7 +125,7 @@ server <- function(input, output, session) {
     ds <- data_selected()
     req(ds)
     cur <- ds$current_data
-    if (is.null(cur)) count <- 0 else count <- length(unique(cur$study_id))
+    if (is.null(cur)) count <- 0 else count <- length(unique(cur$unique_id))
     paste("当前筛选结果中，", count, "项研究有可用的数据。")
   })
 

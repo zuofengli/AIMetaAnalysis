@@ -13,10 +13,14 @@ renv::install(c("openxlsx"))
 renv::install(c("robvis"))
 renv::install(c("metafor", "metaviz"))
 renv::install(c("janitor"))
-renv::install(c("NMA"))
+
 renv::install(c("gemtc","rjags","coda"))
 renv::install(c("reshape2"))
 renv::install(c("shinyjqui"))
+renv::install(c("rprojroot"))
+
+renv::install(c("webshot2"))
+renv::install(c("gt"), prompt = FALSE)
 #
 # 1. 仅创建空模板（无自动填充）
 create_study_structure("CheckMate816", "primary")

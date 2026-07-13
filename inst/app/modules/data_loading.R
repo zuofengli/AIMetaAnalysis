@@ -1,16 +1,34 @@
 # modules/data_loading.R（完整修复版）
 # modules/data_loading.R 开头（已验证）
 get_data_file <- function() {
+  # 使用 rprojroot 查找包根目录（开发模式）
+  if (requireNamespace("rprojroot", quietly = TRUE)) {
+    root <- tryCatch(
+      rprojroot::find_root(rprojroot::has_file("DESCRIPTION")),
+      error = function(e) NULL
+    )
+    if (!is.null(root)) {
+      dev_file <- file.path(root, "inst", "extdata", "clinical_studies_data.xlsx")
+      if (file.exists(dev_file)) {
+        return(dev_file)
+      }
+    }
+  }
+
+  # 备选：检查当前目录下的 inst/extdata（当工作目录恰好是项目根目录时）
+  if (file.exists("inst/extdata/clinical_studies_data.xlsx")) {
+    return("inst/extdata/clinical_studies_data.xlsx")
+  }
+
+  # 最后回退到已安装包中的文件
   pkg_file <- system.file("extdata", "clinical_studies_data.xlsx", package = "AIMetaAnalysis")
   if (pkg_file != "") return(pkg_file)
-  rel_file <- file.path("extdata", "clinical_studies_data.xlsx")
-  if (file.exists(rel_file)) return(rel_file)
-  if (file.exists("clinical_studies_data.xlsx")) return("clinical_studies_data.xlsx")
+
   stop("无法找到 clinical_studies_data.xlsx 文件。")
 }
 
-
 data_file <- get_data_file()
+print(data_file)
 studies_info <- read_excel(data_file, sheet = "studies_info")
 binary_data  <- read_excel(data_file, sheet = "binary_data")
 survival_data <- read_excel(data_file, sheet = "survival")
@@ -30,36 +48,34 @@ if (length(survival_numeric_cols) > 0) {
   suppressWarnings(survival_data <- survival_data %>% mutate(across(all_of(survival_numeric_cols), as.numeric)))
 }
 
-# 统一研究标识列为 "study"（避免重复列名）
-# studies_info
+# ===== 统一研究标识列为 "study"（确保使用 trial 列） =====
+
+# --- studies_info ---
 if ("trial" %in% names(studies_info)) {
-  if (!"study" %in% names(studies_info)) {
-    studies_info <- rename(studies_info, study = trial)
-  } else {
-    studies_info <- select(studies_info, -trial)
+  if ("study" %in% names(studies_info)) {
+    studies_info <- studies_info %>% select(-study)   # 删除旧 study
   }
+  studies_info <- studies_info %>% rename(study = trial)
 } else if (!"study" %in% names(studies_info)) {
   stop("studies_info 中缺少研究标识列（trial 或 study）")
 }
 
-# binary_data
+# --- binary_data ---
 if ("trial" %in% names(binary_data)) {
-  if (!"study" %in% names(binary_data)) {
-    binary_data <- rename(binary_data, study = trial)
-  } else {
-    binary_data <- select(binary_data, -trial)
+  if ("study" %in% names(binary_data)) {
+    binary_data <- binary_data %>% select(-study)
   }
+  binary_data <- binary_data %>% rename(study = trial)
 } else if (!"study" %in% names(binary_data)) {
   stop("binary_data 中缺少研究标识列（trial 或 study）")
 }
 
-# survival_data
+# --- survival_data ---
 if ("trial" %in% names(survival_data)) {
-  if (!"study" %in% names(survival_data)) {
-    survival_data <- rename(survival_data, study = trial)
-  } else {
-    survival_data <- select(survival_data, -trial)
+  if ("study" %in% names(survival_data)) {
+    survival_data <- survival_data %>% select(-study)
   }
+  survival_data <- survival_data %>% rename(study = trial)
 } else if (!"study" %in% names(survival_data)) {
   stop("survival_data 中缺少研究标识列（trial 或 study）")
 }
