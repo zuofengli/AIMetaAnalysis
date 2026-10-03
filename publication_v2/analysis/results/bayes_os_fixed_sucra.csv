@@ -1,0 +1,6 @@
+"treatment","sucra","outcome","model"
+"Chemotherapy",0.0140375,"os","fixed"
+"Nivolumab",0.6188,"os","fixed"
+"Pembrolizumab",0.4722375,"os","fixed"
+"Tislelizumab",0.6952125,"os","fixed"
+"Toripalimab",0.6997125,"os","fixed"

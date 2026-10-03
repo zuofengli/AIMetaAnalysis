@@ -1,0 +1,8 @@
+"treatment","sucra","outcome","model"
+"Camrelizumab",0.857183333333333,"mpr","fixed"
+"Chemotherapy",0,"mpr","fixed"
+"Durvalumab",0.276241666666667,"mpr","fixed"
+"Nivolumab",0.492425,"mpr","fixed"
+"Pembrolizumab",0.269666666666667,"mpr","fixed"
+"Tislelizumab",0.720983333333333,"mpr","fixed"
+"Toripalimab",0.8835,"mpr","fixed"

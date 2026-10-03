@@ -1,0 +1,8 @@
+"treatment","sucra","outcome","model"
+"Camrelizumab",0.441991666666667,"pcr","random"
+"Chemotherapy",0.0555583333333333,"pcr","random"
+"Durvalumab",0.389116666666667,"pcr","random"
+"Nivolumab",0.621833333333333,"pcr","random"
+"Pembrolizumab",0.4308,"pcr","random"
+"Tislelizumab",0.672433333333333,"pcr","random"
+"Toripalimab",0.888266666666667,"pcr","random"

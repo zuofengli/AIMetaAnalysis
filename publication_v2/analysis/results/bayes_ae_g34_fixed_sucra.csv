@@ -1,0 +1,6 @@
+"treatment","sucra","outcome","model"
+"Chemotherapy",0.7478875,"ae_g34","fixed"
+"Durvalumab",0.787375,"ae_g34","fixed"
+"Nivolumab",0.6380125,"ae_g34","fixed"
+"Pembrolizumab",0.193075,"ae_g34","fixed"
+"Toripalimab",0.13365,"ae_g34","fixed"

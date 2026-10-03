@@ -1,0 +1,15 @@
+"unique_id","trial","year","arm","trt","d","n"
+"AEGEAN-2023-1","AEGEAN",2023,"ctrl","Chemotherapy",321,398
+"AEGEAN-2023-1","AEGEAN",2023,"exp","Durvalumab",348,401
+"CheckMate 77T-2024-1","CheckMate 77T",2024,"ctrl","Chemotherapy",200,230
+"CheckMate 77T-2024-1","CheckMate 77T",2024,"exp","Nivolumab",203,229
+"CheckMate 816-2022-1","CheckMate 816",2022,"ctrl","Chemotherapy",156,176
+"CheckMate 816-2022-1","CheckMate 816",2022,"exp","Nivolumab",145,176
+"KEYNOTE-671-2023-1","KEYNOTE-671",2023,"ctrl","Chemotherapy",379,399
+"KEYNOTE-671-2023-1","KEYNOTE-671",2023,"exp","Pembrolizumab",383,396
+"NEOTORCH-2024-1","NEOTORCH",2024,"ctrl","Chemotherapy",199,202
+"NEOTORCH-2024-1","NEOTORCH",2024,"exp","Toripalimab",201,202
+"RATIONALE-315-2024-1","RATIONALE-315",2024,"ctrl","Chemotherapy",225,226
+"RATIONALE-315-2024-1","RATIONALE-315",2024,"exp","Tislelizumab",224,226
+"TD-FOREKNOW-2023-1","TD-FOREKNOW",2023,"ctrl","Chemotherapy",40,45
+"TD-FOREKNOW-2023-1","TD-FOREKNOW",2023,"exp","Camrelizumab",41,43

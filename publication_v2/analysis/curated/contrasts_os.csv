@@ -1,0 +1,6 @@
+"unique_id","trial","year","treat1","treat2","hr","hr_lci","hr_uci","te","se_te","n1","n2"
+"CheckMate 816-2025-1","CheckMate 816",2025,"Nivolumab","Chemotherapy",0.71,0.51,"0.98",-0.346773630290643,0.16661781784343,179,179
+"KEYNOTE-671-2024-1","KEYNOTE-671",2024,"Pembrolizumab","Chemotherapy",0.72,0.56,"0.93",-0.326194594043889,0.129399949596456,397,400
+"NADIM-II-2023-1","NADIM-II",2023,"Nivolumab","Chemotherapy",0.43,0.19,"0.98",-0.840466957069585,0.41850216824085,57,29
+"NEOTORCH-2024-1","NEOTORCH",2024,"Toripalimab","Chemotherapy",0.62,0.38,"1",-0.483792013130853,0.246832659760639,202,202
+"RATIONALE-315-2024-1","RATIONALE-315",2024,"Tislelizumab","Chemotherapy",0.62,0.39,"0.98",-0.480905623587982,0.235052508301256,226,227

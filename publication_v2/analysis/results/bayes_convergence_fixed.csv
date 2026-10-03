@@ -1,0 +1,9 @@
+"model","n_pars","rhat_max","rhat_gt_1_05","worst_par","ess_min","ess_gt_200","dic","pD"
+"pcr",6,1.00363438462985,0,"d.Chemotherapy.Toripalimab",1075.93756416973,6,NA,NA
+"mpr",6,1.00045670561478,0,"d.Chemotherapy.Durvalumab",7259.46642030336,6,NA,NA
+"trae_any",6,1.00044219695251,0,"d.Chemotherapy.Toripalimab",6512.89508599363,6,NA,NA
+"trae_g34",3,1.00013137938777,0,"d.Chemotherapy.Pembrolizumab",15038.7226340204,3,NA,NA
+"ae_any",5,1.00043056922694,0,"d.Chemotherapy.Camrelizumab",8634.20479579511,5,NA,NA
+"ae_g34",4,1.00014031236971,0,"d.Chemotherapy.Pembrolizumab",15432.7735859318,4,NA,NA
+"efs",6,1.00019226298604,0,"d.Chemotherapy.Nivolumab",20000,6,NA,NA
+"os",4,1.00049807853444,0,"d.Chemotherapy.Toripalimab",18952.7993633278,4,NA,NA

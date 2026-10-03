@@ -1,0 +1,70 @@
+# ===========================================================================
+#  AIMetaAnalysis -- publication_v2 release scope
+#
+#  This directory is published as the DATA AND CODE repository backing the
+#  manuscript's Data availability statement: the source data-extraction
+#  workbook, the curated datasets, the full analysis pipeline, and every
+#  numeric result it produces.
+#
+#  The manuscript itself -- main.tex, supplementary.tex, references.bib, the
+#  compiled PDFs, and the generated tables/ + figures/ -- deliberately lives
+#  OUTSIDE this repository (by default ../../manuscript_v2), so that it can
+#  never be swept into the public release.  See README, "Where the manuscript
+#  lives".
+# ===========================================================================
+
+# --- safety net: if a manuscript folder ever reappears in here, keep it out -
+writeup/
+manuscript_v2/
+
+# --- author-side one-off quality-check helpers, not part of the pipeline -----
+_verify_layout_only.py
+_verify_table_data.py
+
+# ---------------------------------------------------------------------------
+# LaTeX build artefacts
+# ---------------------------------------------------------------------------
+*.aux
+*.log
+*.out
+*.blg
+*.bbl
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# ---------------------------------------------------------------------------
+# Scratch / working directories kept only on the author's machine
+# ---------------------------------------------------------------------------
+_baseline/
+_layoutcheck/
+_meas/
+_preview/
+_fitcheck/
+analysis/_*
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+
+# ---------------------------------------------------------------------------
+# R / RStudio
+# ---------------------------------------------------------------------------
+.Rhistory
+.RData
+.Rproj.user/
+Rplots.pdf
+
+# ---------------------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------------------
+Thumbs.db
+desktop.ini

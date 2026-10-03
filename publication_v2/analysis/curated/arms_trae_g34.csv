@@ -1,0 +1,7 @@
+"unique_id","trial","year","arm","trt","d","n"
+"KEYNOTE-671-2023-1","KEYNOTE-671",2023,"ctrl","Chemotherapy",149,399
+"KEYNOTE-671-2023-1","KEYNOTE-671",2023,"exp","Pembrolizumab",178,396
+"RATIONALE-315-2024-1","RATIONALE-315",2024,"ctrl","Chemotherapy",150,226
+"RATIONALE-315-2024-1","RATIONALE-315",2024,"exp","Tislelizumab",163,226
+"TD-FOREKNOW-2023-1","TD-FOREKNOW",2023,"ctrl","Chemotherapy",5,45
+"TD-FOREKNOW-2023-1","TD-FOREKNOW",2023,"exp","Camrelizumab",11,43

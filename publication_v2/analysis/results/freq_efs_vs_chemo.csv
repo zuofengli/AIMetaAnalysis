@@ -1,0 +1,13 @@
+"outcome","model","treatment","vs","est","lo","hi"
+"efs","common","Camrelizumab","Chemotherapy",0.520480547186881,0.209999999999982,1.28999999999989
+"efs","common","Durvalumab","Chemotherapy",0.682934843158557,0.530000000000002,0.880000000000002
+"efs","common","Nivolumab","Chemotherapy",0.585637696874738,0.476745094065049,0.719402289127597
+"efs","common","Pembrolizumab","Chemotherapy",0.575499782797527,0.46,0.720000000000001
+"efs","common","Tislelizumab","Chemotherapy",0.562138772902207,0.399999999999999,0.789999999999998
+"efs","common","Toripalimab","Chemotherapy",0.399499687108764,0.28000182868261,0.569996277349002
+"efs","random","Camrelizumab","Chemotherapy",0.520480547186881,0.209999999999982,1.28999999999989
+"efs","random","Durvalumab","Chemotherapy",0.682934843158557,0.530000000000002,0.880000000000002
+"efs","random","Nivolumab","Chemotherapy",0.585637696874738,0.476745094065049,0.719402289127597
+"efs","random","Pembrolizumab","Chemotherapy",0.575499782797527,0.46,0.720000000000001
+"efs","random","Tislelizumab","Chemotherapy",0.562138772902207,0.399999999999999,0.789999999999998
+"efs","random","Toripalimab","Chemotherapy",0.399499687108764,0.28000182868261,0.569996277349002

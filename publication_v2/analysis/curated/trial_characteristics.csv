@@ -1,0 +1,10 @@
+"trial","phase","year","first_author","stage_included","experimental_treatment_category","comparator_category","n_total","arm_n_experimental","arm_n_comparator","clinicaltrials_gov_id","pubmed_id"
+"AEGEAN","phase 3",2023,NA,NA,"Neo Chemo + Peri IO","Neo Chemo",797,397,400,NA,NA
+"CheckMate 77T","phase 3",2024,NA,NA,"Neo Chemo + Peri IO","Neo Chemo",461,229,232,NA,NA
+"CheckMate 816","phase 3",2022,NA,NA,"Neo Chemo + Neo IO + Adj Chemo","Neo Chemo + Adj Chemo",358,179,179,NA,NA
+"IFCT-0002","phase 3",2013,"Virginie Westeel","I,II","Neo Chemo","Neo Chemo + Adj Chemo",528,267,261,NA,NA
+"KEYNOTE-671","phase 3",2023,NA,"II,IIIA,IIIB(N2)","Neo Chemo + Peri IO","Neo Chemo",0,NA,NA,NA,NA
+"NADIM-II","phase 2",2023,NA,NA,"Neo Chemo + Peri IO","Neo Chemo",0,NA,NA,NA,NA
+"NEOTORCH","phase 3",2024,NA,"II,IIIA,IIIB(N2)","Neo Chemo + Peri IO + Adj Chemo","Neo Chemo + Adj Chemo",404,202,202,NA,NA
+"RATIONALE-315","phase 3",2024,NA,NA,"Neo Chemo + Peri IO","Neo Chemo",0,NA,NA,NA,NA
+"TD-FOREKNOW","phase 2",2023,NA,NA,"Neo Chemo + Neo IO","Neo Chemo",0,NA,NA,NA,"37535377"

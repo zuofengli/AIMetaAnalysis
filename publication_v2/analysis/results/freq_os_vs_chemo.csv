@@ -1,0 +1,9 @@
+"outcome","model","treatment","vs","est","lo","hi"
+"os","common","Nivolumab","Chemotherapy",0.660789035543013,0.487861400737739,0.89501269998729
+"os","common","Pembrolizumab","Chemotherapy",0.721664742106749,0.560002609829355,0.929995665839308
+"os","common","Tislelizumab","Chemotherapy",0.61822326064295,0.390003301568413,0.979991703821402
+"os","common","Toripalimab","Chemotherapy",0.616441400296898,0.380003378135889,0.999991110247743
+"os","random","Nivolumab","Chemotherapy",0.64123774672063,0.436183693308702,0.942689637708078
+"os","random","Pembrolizumab","Chemotherapy",0.721664742106749,0.494600017681205,1.05297206102342
+"os","random","Tislelizumab","Chemotherapy",0.61822326064295,0.360583139858749,1.05994972518604
+"os","random","Toripalimab","Chemotherapy",0.616441400296898,0.352474326665149,1.07809270421276
