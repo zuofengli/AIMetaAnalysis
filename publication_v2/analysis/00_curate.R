@@ -245,6 +245,17 @@ make_survival_contrasts <- function(outcome, keys) {
   dat <- bind_rows(rows)
   dat <- dat %>%
     mutate(
+      # readxl types a whole column as character when even one cell holds a
+      # non-numeric token; the survival sheet has one legacy row whose upper CI
+      # is the literal text "Inf".  Coerce explicitly, so that log() always sees
+      # numbers and a record with a missing `se_te` cannot abort the run
+      # (base::ifelse only forces `yes` when at least one test value is TRUE,
+      # which previously masked this).
+      hr     = as.numeric(hr),
+      hr_lci = as.numeric(hr_lci),
+      hr_uci = as.numeric(hr_uci),
+      te     = as.numeric(te),
+      se_te  = as.numeric(se_te),
       te    = ifelse(is.na(te), log(hr), te),
       se_te = ifelse(is.na(se_te), (log(hr_uci) - log(hr_lci)) / (2 * qnorm(0.975)), se_te)
     ) %>%
@@ -263,7 +274,12 @@ os  <- make_survival_contrasts("OverallSurvival", os_keys)
 # chemotherapy), used only for the treatment-architecture sensitivity analysis.
 ifct <- survival_data %>%
   filter(trial == "IFCT-0002", subgroup == "Overall") %>%
-  mutate(te    = ifelse(is.na(te), log(hr), te),
+  mutate(hr     = as.numeric(hr),
+         hr_lci = as.numeric(hr_lci),
+         hr_uci = as.numeric(hr_uci),
+         te     = as.numeric(te),
+         se_te  = as.numeric(se_te),
+         te    = ifelse(is.na(te), log(hr), te),
          se_te = ifelse(is.na(se_te), (log(hr_uci) - log(hr_lci)) / (2 * qnorm(0.975)), se_te)) %>%
   select(unique_id, trial, year, outcome, treat1, treat2, hr, hr_lci, hr_uci, te, se_te, n1, n2) %>%
   filter(outcome %in% c("EventFreeSurvival", "OverallSurvival")) %>%

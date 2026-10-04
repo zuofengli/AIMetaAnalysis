@@ -1,3 +1,3 @@
 "unique_id","trial","year","outcome","treat1","treat2","hr","hr_lci","hr_uci","te","se_te","n1","n2"
-"IFCT-0002-2013-1","IFCT-0002",2013,"EventFreeSurvival","Neo Chemo","Neo Chemo + Adj Chemo",1.06,0.84,"1.33",0.0554127775444423,0.11722763504552,261,267
-"IFCT-0002-2013-1","IFCT-0002",2013,"OverallSurvival","Neo Chemo","Neo Chemo + Adj Chemo",1.01,0.79,"1.3",0.0133209654732106,0.127062907650143,261,267
+"IFCT-0002-2013-1","IFCT-0002",2013,"EventFreeSurvival","Neo Chemo","Neo Chemo + Adj Chemo",1.06,0.84,1.33,0.0554127775444423,0.11722763504552,261,267
+"IFCT-0002-2013-1","IFCT-0002",2013,"OverallSurvival","Neo Chemo","Neo Chemo + Adj Chemo",1.01,0.79,1.3,0.0133209654732106,0.127062907650143,261,267

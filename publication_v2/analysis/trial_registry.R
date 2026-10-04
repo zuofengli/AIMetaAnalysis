@@ -94,23 +94,28 @@ expected_trae_g34 <- data.frame(
 #   id : publication record (unique_id)
 #   hr : the published hazard-ratio point estimate to match (tolerance 0.005)
 #        use  NULL  to take the first available Overall row for that record.
+#
+# 2026-10-04 (P1-8): EFS and OS now use the MOST MATURE analysis of each trial
+# (data cut-offs 2024-05-10 to 2025-07-03), i.e. the -2026- records for
+# KEYNOTE-671, RATIONALE-315 and AEGEAN.  Response (pCR/MPR) and safety remain
+# on the original records.  Network structure is unchanged (EFS 8, OS 5).
 efs_keys <- list(
   list(id = "CheckMate 816-2022-1", hr = 0.63),
   list(id = "CheckMate 77T-2024-1", hr = 0.58),
-  list(id = "KEYNOTE-671-2023-1",   hr = 0.58),
-  list(id = "AEGEAN-2023-1",        hr = 0.68),
+  list(id = "KEYNOTE-671-2026-1",   hr = 0.58),   # 5-year analysis
+  list(id = "AEGEAN-2026-1",        hr = 0.69),   # updated outcomes
   list(id = "NADIM-II-2023-1",      hr = 0.47),
   list(id = "NEOTORCH-2024-1",      hr = 0.40),
-  list(id = "RATIONALE-315-2024-1", hr = 0.56),
+  list(id = "RATIONALE-315-2026-1", hr = 0.58),   # final analysis
   list(id = "TD-FOREKNOW-2023-1",   hr = 0.52)
 )
 
 os_keys <- list(
   list(id = "CheckMate 816-2025-1", hr = 0.71),
-  list(id = "KEYNOTE-671-2024-1",   hr = 0.72),
+  list(id = "KEYNOTE-671-2026-1",   hr = 0.74),   # 5-year analysis
   list(id = "NADIM-II-2023-1",      hr = 0.43),
   list(id = "NEOTORCH-2024-1",      hr = 0.62),
-  list(id = "RATIONALE-315-2024-1", hr = 0.62)
+  list(id = "RATIONALE-315-2026-1", hr = 0.65)    # final analysis
 )
 
 # --- Trials shown in the baseline characteristics table (Table 1) ------------

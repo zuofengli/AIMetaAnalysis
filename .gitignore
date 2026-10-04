@@ -1,2 +1,12 @@
 .Rproj.user
 .positai
+
+# ---------------------------------------------------------------------------
+# Author-side scratch.  This repository is the public data-and-code release
+# backing the manuscript, so debugging scripts, ad-hoc workbook copies and
+# pre-edit backups must never be committed.
+# ---------------------------------------------------------------------------
+_dbg*.R
+_bk_cmp.xlsx
+*.bak
+_pre_*/
